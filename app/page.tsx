@@ -5,44 +5,7 @@ import MGZSClient, { Country, Meta } from "./MGZSClient";
 // and can be overridden in-app. NOTE: Position (the ranking) does not use it at all.
 const REAL_RATE = 0.01;
 
-// Country list is coordinates only — every displayed number comes from live data.
-// A country appears ONLY if its real debt, revenue, and population all loaded.
-const COUNTRIES: { iso: string; name: string; lat: number; lng: number }[] = [
-  { iso: "USA", name: "USA",          lat: 39.8, lng: -98.6 },
-  { iso: "NOR", name: "Norway",       lat: 60.5, lng:   8.5 },
-  { iso: "BGR", name: "Bulgaria",     lat: 42.7, lng:  25.5 },
-  { iso: "JPN", name: "Japan",        lat: 36.2, lng: 138.3 },
-  { iso: "CAN", name: "Canada",       lat: 56.1, lng: -106.3 },
-  { iso: "MEX", name: "Mexico",       lat: 23.6, lng: -102.5 },
-  { iso: "BRA", name: "Brazil",       lat: -14.2, lng: -51.9 },
-  { iso: "ARG", name: "Argentina",    lat: -38.4, lng: -63.6 },
-  { iso: "GBR", name: "UK",           lat: 54.0, lng:  -2.0 },
-  { iso: "FRA", name: "France",       lat: 46.6, lng:   2.2 },
-  { iso: "DEU", name: "Germany",      lat: 51.2, lng:  10.4 },
-  { iso: "ITA", name: "Italy",        lat: 41.9, lng:  12.6 },
-  { iso: "ESP", name: "Spain",        lat: 40.0, lng:  -3.7 },
-  { iso: "NLD", name: "Netherlands",  lat: 52.1, lng:   5.3 },
-  { iso: "SWE", name: "Sweden",       lat: 60.1, lng:  18.6 },
-  { iso: "CHE", name: "Switzerland",  lat: 46.8, lng:   8.2 },
-  { iso: "POL", name: "Poland",       lat: 51.9, lng:  19.1 },
-  { iso: "GRC", name: "Greece",       lat: 39.1, lng:  21.8 },
-  { iso: "TUR", name: "Turkey",       lat: 38.9, lng:  35.2 },
-  { iso: "RUS", name: "Russia",       lat: 61.5, lng: 105.3 },
-  { iso: "UKR", name: "Ukraine",      lat: 48.4, lng:  31.2 },
-  { iso: "CHN", name: "China",        lat: 35.9, lng: 104.2 },
-  { iso: "KOR", name: "South Korea",  lat: 36.5, lng: 127.8 },
-  { iso: "IND", name: "India",        lat: 20.6, lng:  79.0 },
-  { iso: "IDN", name: "Indonesia",    lat: -0.8, lng: 113.9 },
-  { iso: "AUS", name: "Australia",    lat: -25.3, lng: 133.8 },
-  { iso: "ZAF", name: "South Africa", lat: -30.6, lng:  22.9 },
-  { iso: "NGA", name: "Nigeria",      lat:  9.1, lng:   8.7 },
-  { iso: "EGY", name: "Egypt",        lat: 26.8, lng:  30.8 },
-  { iso: "SAU", name: "Saudi Arabia", lat: 23.9, lng:  45.1 },
-  { iso: "ARE", name: "UAE",          lat: 23.4, lng:  53.8 },
-  { iso: "ISR", name: "Israel",       lat: 31.0, lng:  34.9 },
-];
-
-// ─── Fetch helpers (every fetch isolated; failure -> empty -> country skipped) ─
+// ─── Fetch helpers ────────────────────────────────────────────────────────────
 async function safeJSON(url: string, revalidate: number): Promise<any> {
   try {
     const res = await fetch(url, {
@@ -56,6 +19,25 @@ async function safeJSON(url: string, revalidate: number): Promise<any> {
   }
 }
 
+// World Bank country universe (names + capital coordinates), aggregates removed.
+function parseCountries(json: any): { iso: string; name: string; lat: number; lng: number }[] {
+  const rows = Array.isArray(json) ? json[1] : null;
+  if (!Array.isArray(rows)) return [];
+  const out: { iso: string; name: string; lat: number; lng: number }[] = [];
+  for (const r of rows) {
+    const iso = r?.id;
+    const name = r?.name;
+    const lat = parseFloat(r?.latitude);
+    const lng = parseFloat(r?.longitude);
+    if (!iso || !name) continue;
+    if (r?.region?.value === "Aggregates") continue;
+    if (Number.isNaN(lat) || Number.isNaN(lng)) continue;
+    out.push({ iso, name, lat, lng });
+  }
+  return out;
+}
+
+// World Bank indicator: [meta, [ {countryiso3code, value}, ... ] ] -> { ISO3: value }
 function parseWB(json: any): Record<string, number> {
   const out: Record<string, number> = {};
   const rows = Array.isArray(json) ? json[1] : null;
@@ -67,6 +49,7 @@ function parseWB(json: any): Record<string, number> {
   return out;
 }
 
+// IMF DataMapper: { values: { IND: { ISO3: { year: value } } } } -> { ISO3: latest non-future value }
 function parseIMF(json: any, indicator: string): Record<string, number> {
   const out: Record<string, number> = {};
   const block = json?.values?.[indicator];
@@ -89,17 +72,14 @@ function parseIMF(json: any, indicator: string): Record<string, number> {
 }
 
 export default async function Home() {
-  const ISO = COUNTRIES.map((c) => c.iso);
-  const wbList = ISO.join(";");
-
+  // World Bank indicators for every country at once; IMF indicators whole.
   const wb = (code: string) =>
-    safeJSON(`https://api.worldbank.org/v2/country/${wbList}/indicator/${code}?format=json&mrnev=1&per_page=2000`, 86400).then(parseWB);
-  // IMF DataMapper ignores country/period path filters and can return empty if any
-  // code is unrecognized, so fetch the whole indicator and select countries in code.
+    safeJSON(`https://api.worldbank.org/v2/country/all/indicator/${code}?format=json&mrnev=1&per_page=20000`, 86400).then(parseWB);
   const imf = (ind: string) =>
     safeJSON(`https://www.imf.org/external/datamapper/api/v1/${ind}`, 86400).then((j) => parseIMF(j, ind));
 
-  const [pop, growth, realG, gdpN, gdpP, cpi, debt, pb, rev, btcJson] = await Promise.all([
+  const [countryJson, pop, growth, realG, gdpN, gdpP, cpi, debt, pb, rev, btcJson] = await Promise.all([
+    safeJSON("https://api.worldbank.org/v2/country?format=json&per_page=400", 86400),
     wb("SP.POP.TOTL"),
     wb("SP.POP.GROW"),
     wb("NY.GDP.MKTP.KD.ZG"),
@@ -112,11 +92,12 @@ export default async function Home() {
     safeJSON("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", 3600),
   ]);
 
+  const universe = parseCountries(countryJson);
   const btcPrice = typeof btcJson?.bitcoin?.usd === "number" ? btcJson.bitcoin.usd : 95_000;
   const num = (x: unknown): x is number => typeof x === "number";
 
   const countries: Country[] = [];
-  for (const cfg of COUNTRIES) {
+  for (const cfg of universe) {
     const code = cfg.iso;
     // Essentials must all be live, or the country is not shown at all (no placeholders).
     if (!num(debt[code]) || !num(rev[code]) || rev[code] <= 0 || !num(pop[code]) || pop[code] <= 0) continue;
@@ -148,7 +129,7 @@ export default async function Home() {
     asOf: new Date().toISOString().slice(0, 10),
     live,
     curated: ["interest rate (assumed 1% real, adjustable in-app)"],
-    diag: `feeds → debt ${Object.keys(debt).length}, revenue ${Object.keys(rev).length}, primary-balance ${Object.keys(pb).length}, population ${Object.keys(pop).length}, gdp ${Object.keys(gdpN).length}, inflation ${Object.keys(cpi).length}; countries shown ${countries.length}`,
+    diag: `feeds → debt ${Object.keys(debt).length}, revenue ${Object.keys(rev).length}, primary-balance ${Object.keys(pb).length}, population ${Object.keys(pop).length}, gdp ${Object.keys(gdpN).length}; country universe ${universe.length}; countries shown ${countries.length}`,
   };
 
   return <MGZSClient countries={countries} btcPrice={btcPrice} meta={meta} />;
