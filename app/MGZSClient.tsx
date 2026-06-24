@@ -172,6 +172,18 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
     };
   });
 
+  if (countries.length === 0) {
+    return (
+      <main style={{ maxWidth: 980, margin: "40px auto", padding: 24, fontFamily: "system-ui, sans-serif", color: "#1a1a1a", background: "#ffffff", borderRadius: 14 }}>
+        <h1 style={{ fontSize: 26, marginBottom: 8 }}>Generation Zero Score</h1>
+        <p style={{ color: "#555", fontSize: 14, lineHeight: 1.6 }}>
+          Live data from the IMF and World Bank couldn&apos;t be loaded right now. Rather than show stale or
+          placeholder figures, nothing is displayed. Please refresh in a moment.
+        </p>
+      </main>
+    );
+  }
+
   return (
     <main style={{ maxWidth: 980, margin: "40px auto", padding: 24, fontFamily: "system-ui, sans-serif", color: "#1a1a1a", background: "#ffffff", borderRadius: 14 }}>
       <h1 style={{ fontSize: 26, marginBottom: 4 }}>Generation Zero Score</h1>
