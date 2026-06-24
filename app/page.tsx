@@ -45,7 +45,10 @@ const COUNTRIES: { iso: string; name: string; lat: number; lng: number }[] = [
 // ─── Fetch helpers (every fetch isolated; failure -> empty -> country skipped) ─
 async function safeJSON(url: string, revalidate: number): Promise<any> {
   try {
-    const res = await fetch(url, { next: { revalidate } } as RequestInit);
+    const res = await fetch(url, {
+      next: { revalidate },
+      headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; MGZS/1.0)" },
+    } as RequestInit);
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -68,11 +71,19 @@ function parseIMF(json: any, indicator: string): Record<string, number> {
   const out: Record<string, number> = {};
   const block = json?.values?.[indicator];
   if (!block || typeof block !== "object") return out;
+  const curY = new Date().getFullYear();
   for (const code of Object.keys(block)) {
     const series = block[code];
     if (!series || typeof series !== "object") continue;
-    const years = Object.keys(series).filter((y) => typeof series[y] === "number").sort();
-    if (years.length) out[code] = series[years[years.length - 1]];
+    const years = Object.keys(series)
+      .filter((y) => typeof series[y] === "number")
+      .map(Number)
+      .filter((y) => !Number.isNaN(y))
+      .sort((a, b) => a - b);
+    if (!years.length) continue;
+    const notFuture = years.filter((y) => y <= curY);
+    const pick = notFuture.length ? notFuture[notFuture.length - 1] : years[years.length - 1];
+    out[code] = series[String(pick)];
   }
   return out;
 }
@@ -80,14 +91,13 @@ function parseIMF(json: any, indicator: string): Record<string, number> {
 export default async function Home() {
   const ISO = COUNTRIES.map((c) => c.iso);
   const wbList = ISO.join(";");
-  const imfList = ISO.join("/");
-  const yr = new Date().getFullYear();
-  const periods = [yr - 2, yr - 1, yr].join(",");
 
   const wb = (code: string) =>
     safeJSON(`https://api.worldbank.org/v2/country/${wbList}/indicator/${code}?format=json&mrnev=1&per_page=2000`, 86400).then(parseWB);
+  // IMF DataMapper ignores country/period path filters and can return empty if any
+  // code is unrecognized, so fetch the whole indicator and select countries in code.
   const imf = (ind: string) =>
-    safeJSON(`https://www.imf.org/external/datamapper/api/v1/${ind}/${imfList}?periods=${periods}`, 86400).then((j) => parseIMF(j, ind));
+    safeJSON(`https://www.imf.org/external/datamapper/api/v1/${ind}`, 86400).then((j) => parseIMF(j, ind));
 
   const [pop, growth, realG, gdpN, gdpP, cpi, debt, pb, rev, btcJson] = await Promise.all([
     wb("SP.POP.TOTL"),
@@ -138,6 +148,7 @@ export default async function Home() {
     asOf: new Date().toISOString().slice(0, 10),
     live,
     curated: ["interest rate (assumed 1% real, adjustable in-app)"],
+    diag: `feeds → debt ${Object.keys(debt).length}, revenue ${Object.keys(rev).length}, primary-balance ${Object.keys(pb).length}, population ${Object.keys(pop).length}, gdp ${Object.keys(gdpN).length}, inflation ${Object.keys(cpi).length}; countries shown ${countries.length}`,
   };
 
   return <MGZSClient countries={countries} btcPrice={btcPrice} meta={meta} />;
