@@ -6,13 +6,6 @@ import Globe, { GlobePoint } from "./Globe";
 // ─── Constants ──────────────────────────────────────────────────────────────
 const GG = 28; // generation gap in years (maps years → descendant generations)
 
-const LATLNG: Record<string, { lat: number; lng: number }> = {
-  USA: { lat: 39.8, lng: -98.6 },
-  Norway: { lat: 60.5, lng: 8.5 },
-  Bulgaria: { lat: 42.7, lng: 25.5 },
-  Japan: { lat: 36.2, lng: 138.3 },
-};
-
 function velocityColor(velocity: number) {
   if (velocity < 0) return "#22c55e";
   if (velocity < 0.003) return "#f59e0b";
@@ -23,6 +16,8 @@ function velocityColor(velocity: number) {
 export type Country = {
   name: string;
   iso3: string;
+  lat: number;
+  lng: number;
   debtToGDP: number;
   taxToGDP: number;
   primaryBalance: number;
@@ -164,11 +159,12 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
   const opts: Opts = { useReal, manualRate: manualOn ? manualRate : null, currency, wy };
   const sel = countries.find((c) => c.name === selected) || null;
 
-  const points: GlobePoint[] = countries.map((c) => {
+  const ranked = [...countries].sort((a, b) => compute(b, opts).LFF - compute(a, opts).LFF);
+
+  const points: GlobePoint[] = ranked.map((c) => {
     const r = compute(c, opts);
-    const ll = LATLNG[c.name] || { lat: 0, lng: 0 };
     return {
-      name: c.name, lat: ll.lat, lng: ll.lng,
+      name: c.name, lat: c.lat, lng: c.lng,
       altitude: 0.03 + r.LFF * 2,
       color: velocityColor(r.velocity),
       label: `<div style="font:13px system-ui;padding:5px 9px;background:#111;color:#fff;border-radius:5px">`
@@ -187,7 +183,8 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
 
       <div style={{ fontSize: 11, color: "#888", marginBottom: 20, lineHeight: 1.5, borderLeft: "3px solid #ddd", paddingLeft: 10 }}>
         <b>Live</b> ({meta.asOf}): {meta.live.join(", ")}.<br />
-        <b>Still curated</b>: {meta.curated.join(", ")} — no clean free single-source yet; refined in a later step.
+        <b>Assumed</b>: {meta.curated.join(", ")}. Position (the ranking) does not depend on it.<br />
+        The denominator is government revenue, slightly broader than pure tax, so resource-rich states read a little lighter than a tax-only measure would show.
       </div>
 
       {/* ── Lenses ── */}
@@ -270,7 +267,7 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
           </tr>
         </thead>
         <tbody>
-          {countries.map((c) => {
+          {ranked.map((c, idx) => {
             const r = compute(c, opts);
             const freeing = r.livesPerYear < 0;
             const isSel = selected === c.name;
@@ -278,7 +275,7 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
               <tr key={c.name}
                 onClick={() => setSelected(isSel ? null : c.name)}
                 style={{ borderBottom: "1px solid #eee", cursor: "pointer", background: isSel ? "#eef3ff" : "transparent" }}>
-                <td style={{ padding: 8, fontWeight: 600 }}>{c.name}</td>
+                <td style={{ padding: 8, fontWeight: 600 }}><span style={{ color: "#bbb", marginRight: 6 }}>{idx + 1}</span>{c.name}</td>
                 <td style={{ padding: 8 }}>{(r.LFF * 100).toFixed(1)}% &nbsp;({fmt(r.livesOwed)} lives)</td>
                 {genAdjust && (
                   <td style={{ padding: 8, color: r.nextGenLFF > r.LFF ? "#b00" : "#070" }}>
