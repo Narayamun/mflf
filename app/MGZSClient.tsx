@@ -30,7 +30,7 @@ export type Country = {
   pppFactor: number;   // GDP_PPP / GDP_nominal
 };
 
-export type Meta = { asOf: string; live: string[]; curated: string[] };
+export type Meta = { asOf: string; live: string[]; curated: string[]; diag?: string };
 export type Props = { countries: Country[]; btcPrice: number; meta: Meta };
 
 type Currency = "usd" | "ppp" | "btc";
@@ -180,6 +180,7 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
           Live data from the IMF and World Bank couldn&apos;t be loaded right now. Rather than show stale or
           placeholder figures, nothing is displayed. Please refresh in a moment.
         </p>
+        {meta.diag && <p style={{ color: "#aaa", fontSize: 11, fontFamily: "monospace" }}>{meta.diag}</p>}
       </main>
     );
   }
@@ -197,6 +198,7 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
         <b>Live</b> ({meta.asOf}): {meta.live.join(", ")}.<br />
         <b>Assumed</b>: {meta.curated.join(", ")}. Position (the ranking) does not depend on it.<br />
         The denominator is government revenue, slightly broader than pure tax, so resource-rich states read a little lighter than a tax-only measure would show.
+        {meta.diag && <><br /><span style={{ fontFamily: "monospace", color: "#aaa" }}>{meta.diag}</span></>}
       </div>
 
       {/* ── Lenses ── */}
