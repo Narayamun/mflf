@@ -99,9 +99,9 @@ export default async function Home() {
     wb("NY.GDP.MKTP.CD"),
     wb("NY.GDP.MKTP.PP.CD"),
     wb("FP.CPI.TOTL.ZG"),
-    imf("GGXWDG_NGDP"),  // general government gross debt, % of GDP
-    imf("GGXONLB_NGDP"), // general government primary balance, % of GDP
-    imf("GGR_NGDP"),     // general government revenue, % of GDP (the denominator)
+    imf("GGXWDG_NGDP"),        // general government gross debt, % of GDP (WEO)
+    imf("GGXONLB_G01_GDP_PT"), // general government primary balance, % of GDP (Fiscal Monitor)
+    imf("GGR_G01_GDP_PT"),     // general government revenue, % of GDP (Fiscal Monitor) — the denominator
     safeJSON("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", 3600),
   ]);
 
