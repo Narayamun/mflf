@@ -35,6 +35,7 @@ export type Props = { countries: Country[]; btcPrice: number; meta: Meta };
 
 type Currency = "usd" | "ppp" | "btc";
 type Opts = { useReal: boolean; manualRate: number | null; currency: Currency; wy: number };
+type SortKey = "name" | "position" | "velocity" | "govt" | "inherited" | "nextgen";
 
 // ─── Core maths (verified against handoff §2.6) ───────────────────────────────
 function rate(c: Country, { useReal, manualRate, currency }: Opts) {
@@ -155,13 +156,38 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
   const [genAdjust, setGenAdjust] = useState(false);
   const [wy, setWy] = useState(47);
   const [selected, setSelected] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("position");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [showAll, setShowAll] = useState(false);
 
   const opts: Opts = { useReal, manualRate: manualOn ? manualRate : null, currency, wy };
   const sel = countries.find((c) => c.name === selected) || null;
 
-  const ranked = [...countries].sort((a, b) => compute(b, opts).LFF - compute(a, opts).LFF);
+  const rows = countries.map((c) => ({ c, r: compute(c, opts) }));
+  const sortVal = (row: { c: Country; r: ReturnType<typeof compute> }): number | string => {
+    switch (sortKey) {
+      case "name": return row.c.name;
+      case "position": return row.r.LFF;
+      case "velocity": return row.r.livesPerYear;
+      case "govt": return row.r.livesGovt;
+      case "inherited": return row.r.livesInherited;
+      case "nextgen": return row.r.nextGenLFF;
+    }
+  };
+  rows.sort((a, b) => {
+    const va = sortVal(a), vb = sortVal(b);
+    const cmp = typeof va === "string" ? va.localeCompare(vb as string) : (va as number) - (vb as number);
+    return sortDir === "asc" ? cmp : -cmp;
+  });
+  const shown = showAll ? rows : rows.slice(0, 20);
 
-  const points: GlobePoint[] = ranked.map((c) => {
+  const toggleSort = (key: SortKey) => {
+    if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("desc"); }
+  };
+  const arrow = (k: SortKey) => (sortKey === k ? (sortDir === "desc" ? " ▼" : " ▲") : "");
+
+  const points: GlobePoint[] = countries.map((c) => {
     const r = compute(c, opts);
     return {
       name: c.name, lat: c.lat, lng: c.lng,
@@ -270,23 +296,22 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
       {/* ── Table ── */}
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
-          <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
-            <th style={{ padding: 8 }}>Country</th>
-            <th style={{ padding: 8 }}>Mortgaged now<Info text={TIP.position} /></th>
-            {genAdjust && <th style={{ padding: 8 }}>next-gen per head</th>}
-            <th style={{ padding: 8 }}>Lives / year<Info text={TIP.velocity} /></th>
-            <th style={{ padding: 8 }}>…govt adds<Info text={TIP.govt} /></th>
-            <th style={{ padding: 8 }}>…inherited<Info text={TIP.inherited} /></th>
+          <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd", userSelect: "none" }}>
+            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("name")}>Country{arrow("name")}</th>
+            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("position")}>Mortgaged now<Info text={TIP.position} />{arrow("position")}</th>
+            {genAdjust && <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("nextgen")}>next-gen per head{arrow("nextgen")}</th>}
+            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("velocity")}>Lives / year<Info text={TIP.velocity} />{arrow("velocity")}</th>
+            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("govt")}>…govt adds<Info text={TIP.govt} />{arrow("govt")}</th>
+            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("inherited")}>…inherited<Info text={TIP.inherited} />{arrow("inherited")}</th>
             <th style={{ padding: 8 }}>Direction</th>
           </tr>
         </thead>
         <tbody>
-          {ranked.map((c, idx) => {
-            const r = compute(c, opts);
+          {shown.map(({ c, r }, idx) => {
             const freeing = r.livesPerYear < 0;
             const isSel = selected === c.name;
             return (
-              <tr key={c.name}
+              <tr key={c.iso3}
                 onClick={() => setSelected(isSel ? null : c.name)}
                 style={{ borderBottom: "1px solid #eee", cursor: "pointer", background: isSel ? "#eef3ff" : "transparent" }}>
                 <td style={{ padding: 8, fontWeight: 600 }}><span style={{ color: "#bbb", marginRight: 6 }}>{idx + 1}</span>{c.name}</td>
@@ -305,7 +330,16 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
           })}
         </tbody>
       </table>
-      <p style={{ fontSize: 11, color: "#aaa", marginTop: 6 }}>Click a country for its bloodline reach.</p>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
+        {countries.length > 20 && (
+          <button onClick={() => setShowAll((s) => !s)} style={chip(showAll)}>
+            {showAll ? `Show top 20` : `Show all ${countries.length}`}
+          </button>
+        )}
+        <span style={{ fontSize: 11, color: "#aaa" }}>
+          Showing {shown.length} of {countries.length}. Click a column to sort, again to reverse. Click a country for its bloodline reach.
+        </span>
+      </div>
 
       {/* ── Detail panel ── */}
       {sel && (() => {
