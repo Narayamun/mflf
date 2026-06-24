@@ -5,16 +5,13 @@ import MGZSClient, { Country, Meta } from "./MGZSClient";
 // and can be overridden in-app. NOTE: Position (the ranking) does not use it at all.
 const REAL_RATE = 0.01;
 
-// Curated fallback for the original four, so the map never goes empty if live fails.
-const BASE: Record<string, Country> = {
-  USA: { name: "USA",      iso3: "USA", lat: 39.8, lng: -98.6, debtToGDP: 1.22, taxToGDP: 0.27, primaryBalance: -0.030, realRate: REAL_RATE, inflation: 0.030, population: 335_000_000, popGrowth:  0.005, gdpGrowth: 0.025, gdp: 27400e9, pppFactor: 1.00 },
-  NOR: { name: "Norway",   iso3: "NOR", lat: 60.5, lng:   8.5, debtToGDP: 0.44, taxToGDP: 0.39, primaryBalance:  0.060, realRate: REAL_RATE, inflation: 0.030, population: 5_500_000,   popGrowth:  0.007, gdpGrowth: 0.010, gdp: 485e9,   pppFactor: 0.85 },
-  BGR: { name: "Bulgaria", iso3: "BGR", lat: 42.7, lng:  25.5, debtToGDP: 0.24, taxToGDP: 0.30, primaryBalance: -0.020, realRate: REAL_RATE, inflation: 0.030, population: 6_400_000,   popGrowth: -0.007, gdpGrowth: 0.020, gdp: 100e9,   pppFactor: 2.10 },
-  JPN: { name: "Japan",    iso3: "JPN", lat: 36.2, lng: 138.3, debtToGDP: 2.30, taxToGDP: 0.30, primaryBalance: -0.020, realRate: REAL_RATE, inflation: 0.020, population: 124_000_000, popGrowth: -0.005, gdpGrowth: 0.008, gdp: 4200e9,  pppFactor: 1.05 },
-};
-
-// Additional economies — live data only (skipped if IMF lacks debt or revenue).
-const EXTRA: { iso: string; name: string; lat: number; lng: number }[] = [
+// Country list is coordinates only — every displayed number comes from live data.
+// A country appears ONLY if its real debt, revenue, and population all loaded.
+const COUNTRIES: { iso: string; name: string; lat: number; lng: number }[] = [
+  { iso: "USA", name: "USA",          lat: 39.8, lng: -98.6 },
+  { iso: "NOR", name: "Norway",       lat: 60.5, lng:   8.5 },
+  { iso: "BGR", name: "Bulgaria",     lat: 42.7, lng:  25.5 },
+  { iso: "JPN", name: "Japan",        lat: 36.2, lng: 138.3 },
   { iso: "CAN", name: "Canada",       lat: 56.1, lng: -106.3 },
   { iso: "MEX", name: "Mexico",       lat: 23.6, lng: -102.5 },
   { iso: "BRA", name: "Brazil",       lat: -14.2, lng: -51.9 },
@@ -45,7 +42,7 @@ const EXTRA: { iso: string; name: string; lat: number; lng: number }[] = [
   { iso: "ISR", name: "Israel",       lat: 31.0, lng:  34.9 },
 ];
 
-// ─── Fetch helpers (every fetch isolated; failure -> null) ────────────────────
+// ─── Fetch helpers (every fetch isolated; failure -> empty -> country skipped) ─
 async function safeJSON(url: string, revalidate: number): Promise<any> {
   try {
     const res = await fetch(url, { next: { revalidate } } as RequestInit);
@@ -81,7 +78,7 @@ function parseIMF(json: any, indicator: string): Record<string, number> {
 }
 
 export default async function Home() {
-  const ISO = [...Object.keys(BASE), ...EXTRA.map((e) => e.iso)];
+  const ISO = COUNTRIES.map((c) => c.iso);
   const wbList = ISO.join(";");
   const imfList = ISO.join("/");
   const yr = new Date().getFullYear();
@@ -108,29 +105,23 @@ export default async function Home() {
   const btcPrice = typeof btcJson?.bitcoin?.usd === "number" ? btcJson.bitcoin.usd : 95_000;
   const num = (x: unknown): x is number => typeof x === "number";
 
-  const config = [
-    ...Object.values(BASE).map((b) => ({ iso: b.iso3, name: b.name, lat: b.lat, lng: b.lng, base: b as Country })),
-    ...EXTRA.map((e) => ({ ...e, base: undefined as Country | undefined })),
-  ];
-
   const countries: Country[] = [];
-  for (const cfg of config) {
+  for (const cfg of COUNTRIES) {
     const code = cfg.iso;
-    const debtV = num(debt[code]) ? debt[code] / 100 : cfg.base?.debtToGDP ?? null;
-    const revV = num(rev[code]) ? rev[code] / 100 : cfg.base?.taxToGDP ?? null;
-    if (debtV == null || revV == null || revV <= 0) continue; // essentials missing → skip
+    // Essentials must all be live, or the country is not shown at all (no placeholders).
+    if (!num(debt[code]) || !num(rev[code]) || rev[code] <= 0 || !num(pop[code]) || pop[code] <= 0) continue;
     countries.push({
       name: cfg.name, iso3: code, lat: cfg.lat, lng: cfg.lng,
-      debtToGDP: debtV,
-      taxToGDP: revV,
-      primaryBalance: num(pb[code]) ? pb[code] / 100 : cfg.base?.primaryBalance ?? -0.02,
+      debtToGDP: debt[code] / 100,
+      taxToGDP: rev[code] / 100,
+      primaryBalance: num(pb[code]) ? pb[code] / 100 : 0,
       realRate: REAL_RATE,
-      inflation: num(cpi[code]) ? cpi[code] / 100 : cfg.base?.inflation ?? 0.02,
-      population: num(pop[code]) ? pop[code] : cfg.base?.population ?? 0,
-      popGrowth: num(growth[code]) ? growth[code] / 100 : cfg.base?.popGrowth ?? 0,
-      gdpGrowth: num(realG[code]) ? realG[code] / 100 : cfg.base?.gdpGrowth ?? 0.02,
-      gdp: num(gdpN[code]) ? gdpN[code] : cfg.base?.gdp ?? 0,
-      pppFactor: num(gdpP[code]) && num(gdpN[code]) && gdpN[code] > 0 ? gdpP[code] / gdpN[code] : cfg.base?.pppFactor ?? 1,
+      inflation: num(cpi[code]) ? cpi[code] / 100 : 0.02,
+      population: pop[code],
+      popGrowth: num(growth[code]) ? growth[code] / 100 : 0,
+      gdpGrowth: num(realG[code]) ? realG[code] / 100 : 0.02,
+      gdp: num(gdpN[code]) ? gdpN[code] : 0,
+      pppFactor: num(gdpP[code]) && num(gdpN[code]) && gdpN[code] > 0 ? gdpP[code] / gdpN[code] : 1,
     });
   }
 
@@ -142,7 +133,6 @@ export default async function Home() {
   if (Object.keys(pop).length) live.push("population (World Bank)");
   if (Object.keys(cpi).length) live.push("inflation (World Bank)");
   if (num(btcJson?.bitcoin?.usd)) live.push("BTC (CoinGecko)");
-  if (!live.length) live.push("none reachable — curated fallback for the original four");
 
   const meta: Meta = {
     asOf: new Date().toISOString().slice(0, 10),
