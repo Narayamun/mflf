@@ -4,10 +4,8 @@ import { useState } from "react";
 import Globe, { GlobePoint } from "./Globe";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
-const WY = 47;  // working years per lifetime (debt/life-force math)
-const GG = 28;  // generation gap in years (maps years → descendant generations)
+const GG = 28; // generation gap in years (maps years → descendant generations)
 
-// Approx. centroids for the globe markers
 const LATLNG: Record<string, { lat: number; lng: number }> = {
   USA: { lat: 39.8, lng: -98.6 },
   Norway: { lat: 60.5, lng: 8.5 },
@@ -15,7 +13,6 @@ const LATLNG: Record<string, { lat: number; lng: number }> = {
   Japan: { lat: 36.2, lng: 138.3 },
 };
 
-// Velocity → colour: green surfacing, amber mild-sinking, red heavy-sinking
 function velocityColor(velocity: number) {
   if (velocity < 0) return "#22c55e";
   if (velocity < 0.003) return "#f59e0b";
@@ -33,20 +30,16 @@ export type Country = {
   inflation: number;
   population: number;
   popGrowth: number;
-  gdp: number;        // nominal USD
-  pppFactor: number;  // GDP_PPP / GDP_nominal
+  gdpGrowth: number;   // real GDP growth (for the debt-snowball test)
+  gdp: number;         // nominal USD
+  pppFactor: number;   // GDP_PPP / GDP_nominal
 };
 
-export type Meta = {
-  asOf: string;
-  live: string[];     // human labels of fields pulled live
-  curated: string[];  // human labels still curated/placeholder
-};
-
+export type Meta = { asOf: string; live: string[]; curated: string[] };
 export type Props = { countries: Country[]; btcPrice: number; meta: Meta };
 
 type Currency = "usd" | "ppp" | "btc";
-type Opts = { useReal: boolean; manualRate: number | null; currency: Currency };
+type Opts = { useReal: boolean; manualRate: number | null; currency: Currency; wy: number };
 
 // ─── Core maths (verified against handoff §2.6) ───────────────────────────────
 function rate(c: Country, { useReal, manualRate, currency }: Opts) {
@@ -57,23 +50,34 @@ function rate(c: Country, { useReal, manualRate, currency }: Opts) {
 
 function compute(c: Country, opts: Opts) {
   const i = rate(c, opts);
-  const denom = c.taxToGDP * WY;
+  const wy = opts.wy;
+  const denom = c.taxToGDP * wy;
 
-  const LFF = c.debtToGDP / denom;          // POSITION (interest-independent)
+  const LFF = c.debtToGDP / denom;                 // POSITION (fraction of a working life)
+  const yearsToClear = c.debtToGDP / c.taxToGDP;   // = LFF*wy, INDEPENDENT of working-life length
   const livesOwed = LFF * c.population;
 
-  const interestFlow = (i * c.debtToGDP) / denom; // inherited tribute
-  const govFlow = (-c.primaryBalance) / denom;     // current government's own addition
-  const velocity = interestFlow + govFlow;          // VELOCITY
+  const interestFlow = (i * c.debtToGDP) / denom;  // inherited tribute, per year
+  const govFlow = (-c.primaryBalance) / denom;      // current government's own addition, per year
+  const velocity = interestFlow + govFlow;
 
-  const nextGenLFF = LFF / Math.pow(1 + c.popGrowth, GG); // per-descendant share one generation down
+  const nextGenLFF = LFF / Math.pow(1 + c.popGrowth, GG);
+
+  // cumulative interest over one generation, as a share of a working life (wy cancels out)
+  const tribLifeShare = (i * c.debtToGDP) / c.taxToGDP; // = interestFlow * wy
+  const tribLives = tribLifeShare * c.population;
+
+  // debt snowball (structural, real terms): pb* = (realRate − realGrowth) * debt/GDP
+  const pbStar = (c.realRate - c.gdpGrowth) * c.debtToGDP;
+  const snowballing = c.primaryBalance < pbStar;
+  const borrowingForInterest = c.primaryBalance < 0;
 
   return {
-    i, LFF, nextGenLFF, velocity,
-    livesOwed,
+    i, LFF, yearsToClear, nextGenLFF, velocity, livesOwed,
     livesPerYear: velocity * c.population,
     livesGovt: govFlow * c.population,
     livesInherited: interestFlow * c.population,
+    tribLifeShare, tribLives, pbStar, snowballing, borrowingForInterest,
   };
 }
 
@@ -102,6 +106,44 @@ function relation(genIndex: number) {
   return "your " + "great-".repeat(genIndex - 1) + "grandchildren";
 }
 
+// ─── Tooltip ("?" badge; hover on desktop, tap on mobile) ─────────────────────
+function Info({ text }: { text: string }) {
+  const [show, setShow] = useState(false);
+  return (
+    <span style={{ position: "relative", display: "inline-block" }}>
+      <span
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+        onClick={() => setShow((s) => !s)}
+        style={{
+          cursor: "help", fontSize: 10, fontWeight: 700, color: "#fff", background: "#9aa3b2",
+          borderRadius: "50%", width: 15, height: 15, display: "inline-flex",
+          alignItems: "center", justifyContent: "center", marginLeft: 5, verticalAlign: "middle",
+        }}
+      >?</span>
+      {show && (
+        <span style={{
+          position: "absolute", bottom: "150%", left: "50%", transform: "translateX(-50%)",
+          width: 240, background: "#111", color: "#fff", fontSize: 12, lineHeight: 1.45,
+          fontWeight: 400, padding: "9px 11px", borderRadius: 7, zIndex: 20,
+          boxShadow: "0 3px 12px rgba(0,0,0,.35)", textAlign: "left",
+        }}>{text}</span>
+      )}
+    </span>
+  );
+}
+
+const TIP = {
+  position: "How much of this generation's entire working-life taxes the current debt equals. This is the principal only, and it stops with today's adults.",
+  years: "If every tax dollar collected from everyone went to nothing but clearing the debt, this is how many years it would take. It does NOT change when you adjust the working-life slider.",
+  velocity: "How many citizen-lifetimes of tax get newly committed (red) or freed (green) each year. This is the part that actually reaches your descendants.",
+  govt: "The share of this year's change caused by the government spending more than it collects, before interest. A choice that can be reversed.",
+  inherited: "The share caused purely by interest on debt that already existed. Owed every year the principal stands, and it buys nothing new.",
+  tribute: "Interest paid across one whole generation, as a share of a working life. Set it beside the principal: you pay nearly the debt's value again and still owe the principal.",
+  wy: "How many years a person works before retiring. Extending it makes the debt a smaller percentage of a lifetime without changing the debt itself.",
+  status: "Whether the debt-to-GDP ratio rises or falls on its own, comparing the real borrowing rate against real growth. 'Snowballing' means it grows even if the government changed nothing.",
+};
+
 // ─── UI ─────────────────────────────────────────────────────────────────────
 const card: React.CSSProperties = { border: "1px solid #e3e3e3", borderRadius: 10, padding: 16, background: "#fafafa" };
 const chip = (active: boolean): React.CSSProperties => ({
@@ -116,19 +158,18 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
   const [manualRate, setManualRate] = useState(0.05);
   const [currency, setCurrency] = useState<Currency>("usd");
   const [genAdjust, setGenAdjust] = useState(false);
+  const [wy, setWy] = useState(47);
   const [selected, setSelected] = useState<string | null>(null);
 
-  const opts: Opts = { useReal, manualRate: manualOn ? manualRate : null, currency };
+  const opts: Opts = { useReal, manualRate: manualOn ? manualRate : null, currency, wy };
   const sel = countries.find((c) => c.name === selected) || null;
 
   const points: GlobePoint[] = countries.map((c) => {
     const r = compute(c, opts);
     const ll = LATLNG[c.name] || { lat: 0, lng: 0 };
     return {
-      name: c.name,
-      lat: ll.lat,
-      lng: ll.lng,
-      altitude: 0.03 + r.LFF * 2, // bar height ∝ Position
+      name: c.name, lat: ll.lat, lng: ll.lng,
+      altitude: 0.03 + r.LFF * 2,
       color: velocityColor(r.velocity),
       label: `<div style="font:13px system-ui;padding:5px 9px;background:#111;color:#fff;border-radius:5px">`
         + `<b>${c.name}</b><br/>position ${(r.LFF * 100).toFixed(1)}%<br/>velocity ${signed(r.livesPerYear)}/yr</div>`,
@@ -139,19 +180,18 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
     <main style={{ maxWidth: 980, margin: "40px auto", padding: 24, fontFamily: "system-ui, sans-serif", color: "#1a1a1a", background: "#ffffff", borderRadius: 14 }}>
       <h1 style={{ fontSize: 26, marginBottom: 4 }}>Generation Zero Score</h1>
       <p style={{ color: "#666", marginBottom: 12, fontSize: 14, lineHeight: 1.5 }}>
-        <b>Position</b> = how mortgaged this generation is right now (gives the ranking).
+        <b>Position</b> = how mortgaged this generation is right now (the principal, gives the ranking).
         <b> Velocity</b> = citizen-lifetimes mortgaged (red) or freed (green) per year. Negative means a country is
         buying its citizens back, surfacing toward Generation Zero.
       </p>
 
-      {/* data provenance */}
       <div style={{ fontSize: 11, color: "#888", marginBottom: 20, lineHeight: 1.5, borderLeft: "3px solid #ddd", paddingLeft: 10 }}>
         <b>Live</b> ({meta.asOf}): {meta.live.join(", ")}.<br />
         <b>Still curated</b>: {meta.curated.join(", ")} — no clean free single-source yet; refined in a later step.
       </div>
 
       {/* ── Lenses ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(185px, 1fr))", gap: 12, marginBottom: 20 }}>
         <div style={card}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#888", marginBottom: 8, letterSpacing: 0.5 }}>INTEREST</div>
           <div style={{ display: "flex", gap: 6, marginBottom: 10, opacity: manualOn ? 0.4 : 1 }}>
@@ -195,6 +235,18 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
             Growing populations dilute the claim; shrinking ones concentrate it on fewer shoulders.
           </div>
         </div>
+
+        <div style={card}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#888", marginBottom: 8, letterSpacing: 0.5 }}>
+            WORKING LIFE<Info text={TIP.wy} />
+          </div>
+          <input type="range" min={35} max={55} step={1} value={wy}
+            onChange={(e) => setWy(parseInt(e.target.value))} style={{ width: "100%" }} />
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{wy} years</div>
+          <div style={{ fontSize: 11, color: "#888", lineHeight: 1.4, marginTop: 6 }}>
+            Stretch it and watch Position shrink while the debt itself never moves.
+          </div>
+        </div>
       </div>
 
       {/* ── Globe ── */}
@@ -209,11 +261,11 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
         <thead>
           <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
             <th style={{ padding: 8 }}>Country</th>
-            <th style={{ padding: 8 }}>Mortgaged now (position)</th>
+            <th style={{ padding: 8 }}>Mortgaged now<Info text={TIP.position} /></th>
             {genAdjust && <th style={{ padding: 8 }}>next-gen per head</th>}
-            <th style={{ padding: 8 }}>Lives / year (velocity)</th>
-            <th style={{ padding: 8 }}>…govt adds</th>
-            <th style={{ padding: 8 }}>…inherited</th>
+            <th style={{ padding: 8 }}>Lives / year<Info text={TIP.velocity} /></th>
+            <th style={{ padding: 8 }}>…govt adds<Info text={TIP.govt} /></th>
+            <th style={{ padding: 8 }}>…inherited<Info text={TIP.inherited} /></th>
             <th style={{ padding: 8 }}>Direction</th>
           </tr>
         </thead>
@@ -244,11 +296,10 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
       </table>
       <p style={{ fontSize: 11, color: "#aaa", marginTop: 6 }}>Click a country for its bloodline reach.</p>
 
-      {/* ── Bloodline panel ── */}
+      {/* ── Detail panel ── */}
       {sel && (() => {
         const r = compute(sel, opts);
-        const ownLifeYears = r.LFF * WY;
-        const lifetimeTax = sel.gdp * sel.taxToGDP * WY;
+        const lifetimeTax = sel.gdp * sel.taxToGDP * wy;
         const interestBill = r.i * sel.debtToGDP * sel.gdp;
         let reach: React.ReactNode;
         if (r.velocity < 0) {
@@ -270,11 +321,26 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
         }
         return (
           <div style={{ ...card, marginTop: 20, background: "#fff" }}>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>{sel.name} — bloodline reach</div>
-            <p style={{ margin: "8px 0", color: "#333" }}>
-              <b>Stock reach.</b> Today's debt is {(r.LFF * 100).toFixed(1)}% of one working life —
-              about <b>{ownLifeYears.toFixed(1)} years of your own career</b>. It does not even reach your children.
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>{sel.name}</div>
+
+            {/* SELF REACH */}
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#555", marginTop: 4 }}>Self reach<Info text={TIP.position} /></div>
+            <p style={{ margin: "4px 0", color: "#333" }}>
+              Today's debt equals <b>{(r.LFF * 100).toFixed(1)}%</b> of all the tax this generation pays across a
+              working life. Picture it as everyone's taxes for about <b>{r.yearsToClear.toFixed(1)} years</b>
+              <Info text={TIP.years} /> going to nothing but the debt. It is bounded, and it stops with you: it does
+              not reach your children.
             </p>
+            <p style={{ margin: "4px 0 12px", color: "#8a6d00", fontSize: 13, background: "#fff8e6", border: "1px solid #f0e0a0", borderRadius: 6, padding: "8px 10px" }}>
+              <b>But this is a clean-payoff hypothetical.</b> The principal is almost never repaid. Governments roll it
+              over and pay only the interest, so across one generation the interest alone comes to
+              about <b>{(r.tribLifeShare * 100).toFixed(1)}%</b> of a working life — about <b>{(r.tribLifeShare / r.LFF).toFixed(1)}×</b>
+              {" "}the principal itself ({(r.LFF * 100).toFixed(1)}%) — and at the end the full principal is still owed. The
+              {" "}{r.yearsToClear.toFixed(1)}-year figure is a floor that never actually gets cleared.
+            </p>
+
+            {/* BLOODLINE REACH */}
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#555" }}>Bloodline reach<Info text={TIP.velocity} /></div>
             {reach}
             {genAdjust && (
               <p style={{ margin: "8px 0", color: "#333" }}>
@@ -283,10 +349,27 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
                 the line {sel.popGrowth >= 0 ? "widens and dilutes the claim" : "narrows and concentrates the claim on fewer shoulders"}.
               </p>
             )}
-            <div style={{ display: "flex", gap: 24, marginTop: 12, fontSize: 13, color: "#555", borderTop: "1px solid #eee", paddingTop: 12 }}>
-              <div>One generation's lifetime tax output<br /><b style={{ fontSize: 15, color: "#1a1a1a" }}>{money(lifetimeTax, currency, sel.pppFactor, btcPrice)}</b></div>
+
+            {/* TRIBUTE + DEBT STATUS */}
+            <div style={{ display: "flex", gap: 24, marginTop: 12, flexWrap: "wrap", fontSize: 13, color: "#555", borderTop: "1px solid #eee", paddingTop: 12 }}>
+              <div>Principal now<br /><b style={{ fontSize: 15, color: "#1a1a1a" }}>{(r.LFF * 100).toFixed(1)}% of a life</b></div>
+              <div>Interest over one generation<Info text={TIP.tribute} /><br />
+                <b style={{ fontSize: 15, color: "#b00" }}>{(r.tribLifeShare * 100).toFixed(1)}% of a life</b>
+                <span style={{ color: "#888" }}> ({fmt(r.tribLives)} lives)</span>
+              </div>
+              <div>Lifetime tax output<br /><b style={{ fontSize: 15, color: "#1a1a1a" }}>{money(lifetimeTax, currency, sel.pppFactor, btcPrice)}</b></div>
               <div>Annual interest bill<br /><b style={{ fontSize: 15, color: "#1a1a1a" }}>{money(interestBill, currency, sel.pppFactor, btcPrice)}</b></div>
             </div>
+
+            <p style={{ margin: "12px 0 0", fontSize: 13 }}>
+              <b>Debt status<Info text={TIP.status} />:</b>{" "}
+              {r.snowballing
+                ? <span style={{ color: "#b00", fontWeight: 600 }}>Snowballing</span>
+                : <span style={{ color: "#070", fontWeight: 600 }}>Stabilising</span>}
+              {" "}— the debt ratio {r.snowballing ? "rises" : "holds or falls"} on its own at current real rates and growth
+              {r.borrowingForInterest ? ", and the country is currently borrowing to cover its interest." : "."}
+            </p>
+
             <p style={{ fontSize: 12, color: "#888", marginTop: 14, lineHeight: 1.5, fontStyle: "italic" }}>
               The debt's size is a fraction of your own generation, but its trajectory reaches down your entire
               bloodline — and the gap between those two facts is political choice, not arithmetic.
