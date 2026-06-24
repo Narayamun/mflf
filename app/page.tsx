@@ -4,10 +4,10 @@ import MGZSClient, { Country, Meta } from "./MGZSClient";
 // taxToGDP and realRate stay curated (no clean free single-source yet).
 // Everything else below is a fallback in case a live fetch fails.
 const BASE: Record<string, Country> = {
-  USA: { name: "USA",      iso3: "USA", debtToGDP: 1.22, taxToGDP: 0.27, primaryBalance: -0.030, realRate: 0.015, inflation: 0.030, population: 335_000_000, popGrowth:  0.005, gdp: 27400e9, pppFactor: 1.00 },
-  NOR: { name: "Norway",   iso3: "NOR", debtToGDP: 0.44, taxToGDP: 0.39, primaryBalance:  0.060, realRate: 0.010, inflation: 0.030, population: 5_500_000,   popGrowth:  0.007, gdp: 485e9,   pppFactor: 0.85 },
-  BGR: { name: "Bulgaria", iso3: "BGR", debtToGDP: 0.24, taxToGDP: 0.30, primaryBalance: -0.020, realRate: 0.010, inflation: 0.030, population: 6_400_000,   popGrowth: -0.007, gdp: 100e9,   pppFactor: 2.10 },
-  JPN: { name: "Japan",    iso3: "JPN", debtToGDP: 2.30, taxToGDP: 0.30, primaryBalance: -0.020, realRate: 0.000, inflation: 0.020, population: 124_000_000, popGrowth: -0.005, gdp: 4200e9,  pppFactor: 1.05 },
+  USA: { name: "USA",      iso3: "USA", debtToGDP: 1.22, taxToGDP: 0.27, primaryBalance: -0.030, realRate: 0.015, inflation: 0.030, population: 335_000_000, popGrowth:  0.005, gdpGrowth: 0.025, gdp: 27400e9, pppFactor: 1.00 },
+  NOR: { name: "Norway",   iso3: "NOR", debtToGDP: 0.44, taxToGDP: 0.39, primaryBalance:  0.060, realRate: 0.010, inflation: 0.030, population: 5_500_000,   popGrowth:  0.007, gdpGrowth: 0.010, gdp: 485e9,   pppFactor: 0.85 },
+  BGR: { name: "Bulgaria", iso3: "BGR", debtToGDP: 0.24, taxToGDP: 0.30, primaryBalance: -0.020, realRate: 0.010, inflation: 0.030, population: 6_400_000,   popGrowth: -0.007, gdpGrowth: 0.020, gdp: 100e9,   pppFactor: 2.10 },
+  JPN: { name: "Japan",    iso3: "JPN", debtToGDP: 2.30, taxToGDP: 0.30, primaryBalance: -0.020, realRate: 0.000, inflation: 0.020, population: 124_000_000, popGrowth: -0.005, gdpGrowth: 0.008, gdp: 4200e9,  pppFactor: 1.05 },
 };
 const ISO = ["USA", "NOR", "BGR", "JPN"];
 
@@ -59,9 +59,10 @@ async function imf(indicator: string): Promise<Record<string, number>> {
 }
 
 export default async function Home() {
-  const [pop, growth, gdpN, gdpP, cpi, debt, pb, btcJson] = await Promise.all([
+  const [pop, growth, realG, gdpN, gdpP, cpi, debt, pb, btcJson] = await Promise.all([
     wb("SP.POP.TOTL"),
     wb("SP.POP.GROW"),
+    wb("NY.GDP.MKTP.KD.ZG"),
     wb("NY.GDP.MKTP.CD"),
     wb("NY.GDP.MKTP.PP.CD"),
     wb("FP.CPI.TOTL.ZG"),
@@ -82,6 +83,7 @@ export default async function Home() {
       ...b,
       population: typeof pop[code] === "number" ? pop[code] : b.population,
       popGrowth: typeof growth[code] === "number" ? growth[code] / 100 : b.popGrowth,
+      gdpGrowth: typeof realG[code] === "number" ? realG[code] / 100 : b.gdpGrowth,
       gdp,
       pppFactor,
       inflation: typeof cpi[code] === "number" ? cpi[code] / 100 : b.inflation,
@@ -94,7 +96,7 @@ export default async function Home() {
   const live: string[] = [];
   if (Object.keys(debt).length) live.push("debt-to-GDP (IMF WEO)");
   if (Object.keys(pb).length) live.push("primary balance (IMF WEO)");
-  if (Object.keys(gdpN).length) live.push("GDP & PPP (World Bank)");
+  if (Object.keys(gdpN).length) live.push("GDP, PPP & growth (World Bank)");
   if (Object.keys(pop).length) live.push("population & growth (World Bank)");
   if (Object.keys(cpi).length) live.push("inflation (World Bank)");
   if (typeof btcJson?.bitcoin?.usd === "number") live.push("BTC price (CoinGecko)");
