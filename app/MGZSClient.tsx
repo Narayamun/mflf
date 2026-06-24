@@ -1,10 +1,26 @@
 "use client";
 
 import { useState } from "react";
+import Globe, { GlobePoint } from "./Globe";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 const WY = 47;  // working years per lifetime (debt/life-force math)
 const GG = 28;  // generation gap in years (maps years → descendant generations)
+
+// Approx. centroids for the globe markers
+const LATLNG: Record<string, { lat: number; lng: number }> = {
+  USA: { lat: 39.8, lng: -98.6 },
+  Norway: { lat: 60.5, lng: 8.5 },
+  Bulgaria: { lat: 42.7, lng: 25.5 },
+  Japan: { lat: 36.2, lng: 138.3 },
+};
+
+// Velocity → colour: green surfacing, amber mild-sinking, red heavy-sinking
+function velocityColor(velocity: number) {
+  if (velocity < 0) return "#22c55e";
+  if (velocity < 0.003) return "#f59e0b";
+  return "#dc2626";
+}
 
 // ─── Types (shared with the server component in page.tsx) ─────────────────────
 export type Country = {
@@ -105,8 +121,22 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
   const opts: Opts = { useReal, manualRate: manualOn ? manualRate : null, currency };
   const sel = countries.find((c) => c.name === selected) || null;
 
+  const points: GlobePoint[] = countries.map((c) => {
+    const r = compute(c, opts);
+    const ll = LATLNG[c.name] || { lat: 0, lng: 0 };
+    return {
+      name: c.name,
+      lat: ll.lat,
+      lng: ll.lng,
+      altitude: 0.03 + r.LFF * 2, // bar height ∝ Position
+      color: velocityColor(r.velocity),
+      label: `<div style="font:13px system-ui;padding:5px 9px;background:#111;color:#fff;border-radius:5px">`
+        + `<b>${c.name}</b><br/>position ${(r.LFF * 100).toFixed(1)}%<br/>velocity ${signed(r.livesPerYear)}/yr</div>`,
+    };
+  });
+
   return (
-    <main style={{ maxWidth: 980, margin: "40px auto", padding: 20, fontFamily: "system-ui, sans-serif", color: "#1a1a1a" }}>
+    <main style={{ maxWidth: 980, margin: "40px auto", padding: 24, fontFamily: "system-ui, sans-serif", color: "#1a1a1a", background: "#ffffff", borderRadius: 14 }}>
       <h1 style={{ fontSize: 26, marginBottom: 4 }}>Generation Zero Score</h1>
       <p style={{ color: "#666", marginBottom: 12, fontSize: 14, lineHeight: 1.5 }}>
         <b>Position</b> = how mortgaged this generation is right now (gives the ranking).
@@ -166,6 +196,13 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
           </div>
         </div>
       </div>
+
+      {/* ── Globe ── */}
+      <Globe points={points} onSelect={(name) => setSelected(name === selected ? null : name)} />
+      <p style={{ fontSize: 11, color: "#aaa", margin: "0 0 20px" }}>
+        Bar height = how mortgaged now (Position). Colour = direction (green surfacing, amber/red sinking).
+        Drag to rotate; click a bar for detail.
+      </p>
 
       {/* ── Table ── */}
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
