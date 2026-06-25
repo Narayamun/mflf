@@ -1,4 +1,4 @@
-import MGZSClient, { Country, Meta } from "./MGZSClient";
+import MGZSClient, { Country, Meta, SeriesPoint } from "./MGZSClient";
 
 // Assumed real borrowing rate. No clean free universal source for the effective
 // rate on government debt, so one flagged assumption is applied to every country
@@ -71,14 +71,56 @@ function parseIMF(json: any, indicator: string): Record<string, number> {
   return out;
 }
 
+// IMF DataMapper, full history: { values: { IND: { ISO3: { year: value } } } }
+//   -> { ISO3: { year: value } }  (every numeric year, including forecasts)
+function parseIMFSeries(json: any, indicator: string): Record<string, Record<number, number>> {
+  const out: Record<string, Record<number, number>> = {};
+  const block = json?.values?.[indicator];
+  if (!block || typeof block !== "object") return out;
+  for (const code of Object.keys(block)) {
+    const series = block[code];
+    if (!series || typeof series !== "object") continue;
+    const yearMap: Record<number, number> = {};
+    for (const y of Object.keys(series)) {
+      const yr = Number(y);
+      const val = series[y];
+      if (!Number.isNaN(yr) && typeof val === "number") yearMap[yr] = val;
+    }
+    if (Object.keys(yearMap).length) out[code] = yearMap;
+  }
+  return out;
+}
+
+// Merge the three IMF flows into one tidy per-year array for a single country.
+// A year is kept only if debt, revenue (>0) and primary balance are all present,
+// so every plotted point is real data, never interpolated. Values -> fractions.
+function buildCountrySeries(
+  debtS?: Record<number, number>,
+  pbS?: Record<number, number>,
+  revS?: Record<number, number>,
+): SeriesPoint[] {
+  if (!debtS || !revS || !pbS) return [];
+  const years = Object.keys(debtS)
+    .map(Number)
+    .filter((y) => typeof revS[y] === "number" && revS[y] > 0 && typeof pbS[y] === "number")
+    .sort((a, b) => a - b);
+  return years.map((y) => ({
+    year: y,
+    debtToGDP: debtS[y] / 100,
+    primaryBalance: pbS[y] / 100,
+    taxToGDP: revS[y] / 100,
+  }));
+}
+
 export default async function Home() {
-  // World Bank indicators for every country at once; IMF indicators whole.
+  // World Bank indicators for every country at once; IMF indicators whole (raw,
+  // so we can derive BOTH the latest value and the full per-year series from one fetch).
   const wb = (code: string) =>
     safeJSON(`https://api.worldbank.org/v2/country/all/indicator/${code}?format=json&mrnev=1&per_page=20000`, 86400).then(parseWB);
-  const imf = (ind: string) =>
-    safeJSON(`https://www.imf.org/external/datamapper/api/v1/${ind}`, 86400).then((j) => parseIMF(j, ind));
+  const imfRaw = (ind: string) =>
+    safeJSON(`https://www.imf.org/external/datamapper/api/v1/${ind}`, 86400);
 
-  const [countryJson, pop, growth, realG, gdpN, gdpP, cpi, debt, pb, rev, btcJson] = await Promise.all([
+  const [countryJson, pop, growth, realG, gdpN, gdpP, cpi, debtRaw, pbRaw, revRaw, btcJson] = await Promise.all([
     safeJSON("https://api.worldbank.org/v2/country?format=json&per_page=400", 86400),
     wb("SP.POP.TOTL"),
     wb("SP.POP.GROW"),
@@ -86,11 +128,20 @@ export default async function Home() {
     wb("NY.GDP.MKTP.CD"),
     wb("NY.GDP.MKTP.PP.CD"),
     wb("FP.CPI.TOTL.ZG"),
-    imf("GGXWDG_NGDP"),        // general government gross debt, % of GDP (WEO)
-    imf("GGXONLB_G01_GDP_PT"), // general government primary balance, % of GDP (Fiscal Monitor)
-    imf("GGR_G01_GDP_PT"),     // general government revenue, % of GDP (Fiscal Monitor) — the denominator
+    imfRaw("GGXWDG_NGDP"),        // general government gross debt, % of GDP (WEO)
+    imfRaw("GGXONLB_G01_GDP_PT"), // general government primary balance, % of GDP (Fiscal Monitor)
+    imfRaw("GGR_G01_GDP_PT"),     // general government revenue, % of GDP (Fiscal Monitor) — the denominator
     safeJSON("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", 3600),
   ]);
+
+  // Latest non-future value per country (drives the current snapshot + ranking).
+  const debt = parseIMF(debtRaw, "GGXWDG_NGDP");
+  const pb = parseIMF(pbRaw, "GGXONLB_G01_GDP_PT");
+  const rev = parseIMF(revRaw, "GGR_G01_GDP_PT");
+  // Full per-year history per country (drives the trajectory chart).
+  const debtSeries = parseIMFSeries(debtRaw, "GGXWDG_NGDP");
+  const pbSeries = parseIMFSeries(pbRaw, "GGXONLB_G01_GDP_PT");
+  const revSeries = parseIMFSeries(revRaw, "GGR_G01_GDP_PT");
 
   const universe = parseCountries(countryJson);
   const btcPrice = typeof btcJson?.bitcoin?.usd === "number" ? btcJson.bitcoin.usd : 95_000;
@@ -113,6 +164,7 @@ export default async function Home() {
       gdpGrowth: num(realG[code]) ? realG[code] / 100 : 0.02,
       gdp: num(gdpN[code]) ? gdpN[code] : 0,
       pppFactor: num(gdpP[code]) && num(gdpN[code]) && gdpN[code] > 0 ? gdpP[code] / gdpN[code] : 1,
+      series: buildCountrySeries(debtSeries[code], pbSeries[code], revSeries[code]),
     });
   }
 
