@@ -1,10 +1,7 @@
 import MoneyFlowClient, { WealthRow, Flow, MFMeta, Partner, Pulse, PulseCorridor } from "./MoneyFlowClient";
 
-// How many of the largest economies form the trade web (reporters AND partners).
 const TOP_N = 135;
-// Cap on arcs drawn at rest, largest-first, so the globe reads as flow not mud.
 const MAX_ARCS = 400;
-// Heaviest corridors animated in the monthly pulse (kept small + targeted on purpose).
 const PULSE_CORRIDORS = 60;
 
 async function safeJSON(url: string, revalidate: number): Promise<any> {
@@ -58,7 +55,6 @@ function dimOf(doc: any, key: string): string | null {
   if (typeof nested === "string") return nested.toUpperCase();
   return null;
 }
-// Fallback: pull reporter/partner out of a DOT series code "M.US.TXG_FOB_USD.CN".
 function areasFromCode(code: any): [string, string] | null {
   if (typeof code !== "string") return null;
   const p = code.split(".");
@@ -79,7 +75,6 @@ const topList = (m: Record<string, Partner[]>, iso3: string, n: number): Partner
   (m[iso3] || []).slice().sort((a, b) => b.valueUSD - a.valueUSD).slice(0, n);
 
 export default async function MoneyFlow() {
-  // Stage 1: country universe + live GDP (the wealth measure). Both World Bank.
   const [geoJson, gdpJson] = await Promise.all([
     safeJSON("https://api.worldbank.org/v2/country?format=json&per_page=400", 86400),
     safeJSON("https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&mrnev=1&per_page=20000", 86400),
@@ -177,23 +172,33 @@ export default async function MoneyFlow() {
     };
   });
 
-  // Stage 3: monthly pulse — fetch ONLY the heaviest corridors, by series id, monthly.
+  // Stage 3: monthly pulse + monthly world total, in one series-id batch.
+  //   • heaviest corridors  -> animated arcs
+  //   • <reporter> -> W00    -> summed into the month's world total
+  //   • W00 -> W00           -> IMF's own world total (preferred if present)
   let pulse: Pulse | null = null;
   let pulseDocs = 0;
   const seed = raw.slice(0, PULSE_CORRIDORS);
-  if (seed.length > 0) {
-    const seedByPair = new Map<string, RawFlow>();
-    const ids: string[] = [];
-    for (const r of seed) {
-      const fa = byIso3.get(r.fromIso3)?.iso2;
-      const ta = byIso3.get(r.toIso3)?.iso2;
-      if (!fa || !ta) continue;
-      seedByPair.set(fa + ">" + ta, r);
-      ids.push("IMF/DOT/M." + fa + ".TXG_FOB_USD." + ta);
-    }
-    const monthlyByPair: Record<string, Record<string, number>> = {};
-    for (let i = 0; i < ids.length; i += 50) {
-      const chunk = ids.slice(i, i + 50);
+
+  const seedByPair = new Map<string, RawFlow>();
+  const corridorIds: string[] = [];
+  for (const r of seed) {
+    const fa = byIso3.get(r.fromIso3)?.iso2;
+    const ta = byIso3.get(r.toIso3)?.iso2;
+    if (!fa || !ta) continue;
+    seedByPair.set(fa + ">" + ta, r);
+    corridorIds.push("IMF/DOT/M." + fa + ".TXG_FOB_USD." + ta);
+  }
+  const worldIds = top.map((w) => "IMF/DOT/M." + w.iso2 + ".TXG_FOB_USD.W00");
+  const allIds = ["IMF/DOT/M.W00.TXG_FOB_USD.W00", ...corridorIds, ...worldIds];
+
+  const monthlyByPair: Record<string, Record<string, number>> = {};
+  const worldDirect: Record<string, number> = {};   // W00 -> W00 (IMF's own total)
+  const reporterSum: Record<string, number> = {};   // Σ reporter -> W00
+
+  if (allIds.length > 0) {
+    for (let i = 0; i < allIds.length; i += 50) {
+      const chunk = allIds.slice(i, i + 50);
       const url = "https://api.db.nomics.world/v22/series?observations=1&format=json&series_ids=" +
         encodeURIComponent(chunk.join(","));
       const json = await safeJSON(url, 86400);
@@ -210,52 +215,77 @@ export default async function MoneyFlow() {
         const periods = doc?.period;
         const vals = doc?.value;
         if (!Array.isArray(periods) || !Array.isArray(vals)) continue;
+        pulseDocs++;
+
+        if (to === "W00") {
+          // World totals: keep IMF's own (W00->W00) and a reporter-sum fallback.
+          for (let k = 0; k < periods.length; k++) {
+            const v = vals[k];
+            if (typeof v !== "number" || Number.isNaN(v) || typeof periods[k] !== "string") continue;
+            const usd = v * 1e6;
+            if (from === "W00") worldDirect[periods[k]] = usd;
+            else reporterSum[periods[k]] = (reporterSum[periods[k]] || 0) + usd;
+          }
+          continue;
+        }
+
         const key = from + ">" + to;
+        if (!seedByPair.has(key)) continue; // only the corridors we seeded
         const m = monthlyByPair[key] || (monthlyByPair[key] = {});
         for (let k = 0; k < periods.length; k++) {
           const v = vals[k];
           if (typeof v === "number" && !Number.isNaN(v) && typeof periods[k] === "string") m[periods[k]] = v * 1e6;
         }
-        pulseDocs++;
       }
     }
-    // Window: 12 consecutive calendar months ending at the latest reported month.
-    const allMonths = new Set<string>();
-    for (const key of Object.keys(monthlyByPair)) for (const mo of Object.keys(monthlyByPair[key])) allMonths.add(mo);
-    const valid = Array.from(allMonths).filter((m) => /^\d{4}-\d{2}$/.test(m)).sort();
-    const months: string[] = [];
-    if (valid.length > 0) {
-      const [my, mm] = valid[valid.length - 1].split("-").map(Number);
-      let yy = my, mo = mm;
-      for (let k = 0; k < 12; k++) {
-        months.unshift(yy + "-" + String(mo).padStart(2, "0"));
-        mo--; if (mo === 0) { mo = 12; yy--; }
-      }
+  }
+
+  // Window: 12 consecutive calendar months ending at the latest reported month
+  // (across corridors and the world series, so the headline number lines up).
+  const allMonths = new Set<string>();
+  for (const key of Object.keys(monthlyByPair)) for (const mo of Object.keys(monthlyByPair[key])) allMonths.add(mo);
+  for (const mo of Object.keys(worldDirect)) allMonths.add(mo);
+  for (const mo of Object.keys(reporterSum)) allMonths.add(mo);
+  const valid = Array.from(allMonths).filter((m) => /^\d{4}-\d{2}$/.test(m)).sort();
+  const months: string[] = [];
+  if (valid.length > 0) {
+    const [my, mm] = valid[valid.length - 1].split("-").map(Number);
+    let yy = my, mo = mm;
+    for (let k = 0; k < 12; k++) {
+      months.unshift(yy + "-" + String(mo).padStart(2, "0"));
+      mo--; if (mo === 0) { mo = 12; yy--; }
     }
-    if (months.length > 0) {
-      const corridors: PulseCorridor[] = [];
-      for (const key of Object.keys(monthlyByPair)) {
-        const s = seedByPair.get(key);
-        if (!s) continue;
-        const a = byIso3.get(s.fromIso3);
-        const b = byIso3.get(s.toIso3);
-        if (!a || !b) continue;
-        const monthly: Record<string, number> = {};
-        for (const mo of months) if (typeof monthlyByPair[key][mo] === "number") monthly[mo] = monthlyByPair[key][mo];
-        if (Object.keys(monthly).length === 0) continue;
-        corridors.push({
-          from: a.name, to: b.name, fromLat: a.lat, fromLng: a.lng, toLat: b.lat, toLng: b.lng,
-          dominant: s.dominant, monthly,
-        });
-      }
-      if (corridors.length > 0) pulse = { months, corridors };
+  }
+
+  if (months.length > 0) {
+    const corridors: PulseCorridor[] = [];
+    for (const key of Object.keys(monthlyByPair)) {
+      const s = seedByPair.get(key);
+      if (!s) continue;
+      const a = byIso3.get(s.fromIso3);
+      const b = byIso3.get(s.toIso3);
+      if (!a || !b) continue;
+      const monthly: Record<string, number> = {};
+      for (const mo of months) if (typeof monthlyByPair[key][mo] === "number") monthly[mo] = monthlyByPair[key][mo];
+      if (Object.keys(monthly).length === 0) continue;
+      corridors.push({
+        from: a.name, to: b.name, fromLat: a.lat, fromLng: a.lng, toLat: b.lat, toLng: b.lng,
+        dominant: s.dominant, monthly,
+      });
     }
+    // Prefer IMF's own world figure; fall back to the reporter sum where it's missing.
+    const totals: Record<string, number> = {};
+    for (const mo of months) {
+      const v = typeof worldDirect[mo] === "number" ? worldDirect[mo] : reporterSum[mo];
+      if (typeof v === "number" && v > 0) totals[mo] = v;
+    }
+    if (corridors.length > 0) pulse = { months, corridors, totals };
   }
 
   const live: string[] = [];
   if (wealth.length) live.push("GDP, the wealth measure (World Bank)");
   if (topFlows.length) live.push("annual goods-trade flows (IMF DOTS via DBnomics)");
-  if (pulse) live.push("monthly pulse on the heaviest corridors");
+  if (pulse) live.push("monthly pulse + world total on the heaviest corridors");
 
   const meta: MFMeta = {
     asOf: new Date().toISOString().slice(0, 10),
@@ -263,7 +293,8 @@ export default async function MoneyFlow() {
     diag:
       `wealth countries ${wealth.length}; trade web top ${top.length}; ` +
       `annual DOT pages ${dotPagesOk}, num_found ${dotNumFound}, flows parsed ${raw.length}, arcs shown ${topFlows.length}; ` +
-      `pulse docs ${pulseDocs}, months ${pulse?.months.length || 0}, corridors ${pulse?.corridors.length || 0}`,
+      `pulse docs ${pulseDocs}, months ${pulse?.months.length || 0}, corridors ${pulse?.corridors.length || 0}, ` +
+      `world-direct ${Object.keys(worldDirect).length}, reporter-sum ${Object.keys(reporterSum).length}`,
   };
 
   return <MoneyFlowClient wealth={wealth} flows={topFlows} pulse={pulse} meta={meta} />;
