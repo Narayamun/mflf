@@ -1,10 +1,11 @@
-import MoneyFlowClient, { WealthRow, Flow, MFMeta, Partner } from "./MoneyFlowClient";
+import MoneyFlowClient, { WealthRow, Flow, MFMeta, Partner, Pulse, PulseCorridor } from "./MoneyFlowClient";
 
 // How many of the largest economies form the trade web (reporters AND partners).
-// Chosen dynamically from live GDP below — never hardcoded.
 const TOP_N = 135;
 // Cap on arcs drawn at rest, largest-first, so the globe reads as flow not mud.
 const MAX_ARCS = 400;
+// Heaviest corridors animated in the monthly pulse (kept small + targeted on purpose).
+const PULSE_CORRIDORS = 60;
 
 async function safeJSON(url: string, revalidate: number): Promise<any> {
   try {
@@ -57,6 +58,13 @@ function dimOf(doc: any, key: string): string | null {
   if (typeof nested === "string") return nested.toUpperCase();
   return null;
 }
+// Fallback: pull reporter/partner out of a DOT series code "M.US.TXG_FOB_USD.CN".
+function areasFromCode(code: any): [string, string] | null {
+  if (typeof code !== "string") return null;
+  const p = code.split(".");
+  if (p.length >= 4) return [p[1].toUpperCase(), p[3].toUpperCase()];
+  return null;
+}
 function latestValue(doc: any): number | null {
   const vals = doc?.value;
   if (!Array.isArray(vals)) return null;
@@ -71,7 +79,7 @@ const topList = (m: Record<string, Partner[]>, iso3: string, n: number): Partner
   (m[iso3] || []).slice().sort((a, b) => b.valueUSD - a.valueUSD).slice(0, n);
 
 export default async function MoneyFlow() {
-  // Stage 1: the country universe and live GDP (the wealth measure). Both World Bank.
+  // Stage 1: country universe + live GDP (the wealth measure). Both World Bank.
   const [geoJson, gdpJson] = await Promise.all([
     safeJSON("https://api.worldbank.org/v2/country?format=json&per_page=400", 86400),
     safeJSON("https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&mrnev=1&per_page=20000", 86400),
@@ -80,7 +88,8 @@ export default async function MoneyFlow() {
   const geo = parseGeo(geoJson);
   const gdp = parseWB(gdpJson);
   const byIso2 = new Map<string, Geo>();
-  for (const g of geo) byIso2.set(g.iso2, g);
+  const byIso3 = new Map<string, Geo>();
+  for (const g of geo) { byIso2.set(g.iso2, g); byIso3.set(g.iso3, g); }
 
   const baseWealth = geo
     .filter((g) => typeof gdp[g.iso3] === "number" && gdp[g.iso3] > 0)
@@ -91,14 +100,14 @@ export default async function MoneyFlow() {
   const topIso2 = top.map((w) => w.iso2);
   const topSet = new Set(top.map((w) => w.iso3));
 
-  // Stage 2: the DBnomics IMF/DOT export matrix among those economies.
+  // Stage 2: annual DBnomics IMF/DOT export matrix among those economies.
   type RawFlow = Flow & { fromIso3: string; toIso3: string };
   const raw: RawFlow[] = [];
-  const expSum: Record<string, number> = {};   // iso3 -> total exports (within web)
-  const impSum: Record<string, number> = {};   // iso3 -> total imports (within web)
-  const pairVal: Record<string, number> = {};  // "A>B" -> exports A->B
-  const outP: Record<string, Partner[]> = {};  // exporter iso3 -> [{partner, value}]
-  const inP: Record<string, Partner[]> = {};   // importer iso3 -> [{partner, value}]
+  const expSum: Record<string, number> = {};
+  const impSum: Record<string, number> = {};
+  const pairVal: Record<string, number> = {};
+  const outP: Record<string, Partner[]> = {};
+  const inP: Record<string, Partner[]> = {};
 
   let dotNumFound = 0;
   let dotPagesOk = 0;
@@ -124,7 +133,7 @@ export default async function MoneyFlow() {
         if (!a || !b) continue;
         const millions = latestValue(doc);
         if (millions == null || millions <= 0) continue;
-        const usd = millions * 1e6; // DOTS values are in millions of USD
+        const usd = millions * 1e6;
         raw.push({
           from: a.name, to: b.name, fromLat: a.lat, fromLng: a.lng, toLat: b.lat, toLng: b.lng,
           valueUSD: usd, dominant: true, fromIso3: a.iso3, toIso3: b.iso3,
@@ -139,22 +148,18 @@ export default async function MoneyFlow() {
     }
   }
 
-  // Corridor dominance: an arc is "dominant" (the earning direction) if it is the
-  // heavier of the two directions in its pair. Used for warm/cool arc colour.
   for (const r of raw) {
     const fwd = pairVal[r.fromIso3 + ">" + r.toIso3] || 0;
     const rev = pairVal[r.toIso3 + ">" + r.fromIso3] || 0;
     r.dominant = fwd >= rev;
   }
 
-  // Heaviest flows first; keep the top for the resting globe (strip internal iso3s).
   raw.sort((a, b) => b.valueUSD - a.valueUSD);
   const topFlows: Flow[] = raw.slice(0, MAX_ARCS).map((r) => ({
     from: r.from, to: r.to, fromLat: r.fromLat, fromLng: r.fromLng,
     toLat: r.toLat, toLng: r.toLng, valueUSD: r.valueUSD, dominant: r.dominant,
   }));
 
-  // Wealth list, enriched with trade vitals for countries inside the web (else null).
   const wealth: WealthRow[] = baseWealth.map((g) => {
     if (!topSet.has(g.iso3)) {
       return {
@@ -172,17 +177,94 @@ export default async function MoneyFlow() {
     };
   });
 
+  // Stage 3: monthly pulse — fetch ONLY the heaviest corridors, by series id, monthly.
+  let pulse: Pulse | null = null;
+  let pulseDocs = 0;
+  const seed = raw.slice(0, PULSE_CORRIDORS);
+  if (seed.length > 0) {
+    const seedByPair = new Map<string, RawFlow>();
+    const ids: string[] = [];
+    for (const r of seed) {
+      const fa = byIso3.get(r.fromIso3)?.iso2;
+      const ta = byIso3.get(r.toIso3)?.iso2;
+      if (!fa || !ta) continue;
+      seedByPair.set(fa + ">" + ta, r);
+      ids.push("IMF/DOT/M." + fa + ".TXG_FOB_USD." + ta);
+    }
+    const monthlyByPair: Record<string, Record<string, number>> = {};
+    for (let i = 0; i < ids.length; i += 50) {
+      const chunk = ids.slice(i, i + 50);
+      const url = "https://api.db.nomics.world/v22/series?observations=1&format=json&series_ids=" +
+        encodeURIComponent(chunk.join(","));
+      const json = await safeJSON(url, 86400);
+      const docs = Array.isArray(json?.series?.docs) ? json.series.docs : null;
+      if (!docs) continue;
+      for (const doc of docs) {
+        let from = dimOf(doc, "REF_AREA");
+        let to = dimOf(doc, "COUNTERPART_AREA");
+        if (!from || !to) {
+          const ac = areasFromCode(doc?.series_code);
+          if (ac) { from = ac[0]; to = ac[1]; }
+        }
+        if (!from || !to) continue;
+        const periods = doc?.period;
+        const vals = doc?.value;
+        if (!Array.isArray(periods) || !Array.isArray(vals)) continue;
+        const key = from + ">" + to;
+        const m = monthlyByPair[key] || (monthlyByPair[key] = {});
+        for (let k = 0; k < periods.length; k++) {
+          const v = vals[k];
+          if (typeof v === "number" && !Number.isNaN(v) && typeof periods[k] === "string") m[periods[k]] = v * 1e6;
+        }
+        pulseDocs++;
+      }
+    }
+    // Window: 12 consecutive calendar months ending at the latest reported month.
+    const allMonths = new Set<string>();
+    for (const key of Object.keys(monthlyByPair)) for (const mo of Object.keys(monthlyByPair[key])) allMonths.add(mo);
+    const valid = Array.from(allMonths).filter((m) => /^\d{4}-\d{2}$/.test(m)).sort();
+    const months: string[] = [];
+    if (valid.length > 0) {
+      const [my, mm] = valid[valid.length - 1].split("-").map(Number);
+      let yy = my, mo = mm;
+      for (let k = 0; k < 12; k++) {
+        months.unshift(yy + "-" + String(mo).padStart(2, "0"));
+        mo--; if (mo === 0) { mo = 12; yy--; }
+      }
+    }
+    if (months.length > 0) {
+      const corridors: PulseCorridor[] = [];
+      for (const key of Object.keys(monthlyByPair)) {
+        const s = seedByPair.get(key);
+        if (!s) continue;
+        const a = byIso3.get(s.fromIso3);
+        const b = byIso3.get(s.toIso3);
+        if (!a || !b) continue;
+        const monthly: Record<string, number> = {};
+        for (const mo of months) if (typeof monthlyByPair[key][mo] === "number") monthly[mo] = monthlyByPair[key][mo];
+        if (Object.keys(monthly).length === 0) continue;
+        corridors.push({
+          from: a.name, to: b.name, fromLat: a.lat, fromLng: a.lng, toLat: b.lat, toLng: b.lng,
+          dominant: s.dominant, monthly,
+        });
+      }
+      if (corridors.length > 0) pulse = { months, corridors };
+    }
+  }
+
   const live: string[] = [];
   if (wealth.length) live.push("GDP, the wealth measure (World Bank)");
-  if (topFlows.length) live.push("bilateral goods-trade flows (IMF DOTS via DBnomics)");
+  if (topFlows.length) live.push("annual goods-trade flows (IMF DOTS via DBnomics)");
+  if (pulse) live.push("monthly pulse on the heaviest corridors");
 
   const meta: MFMeta = {
     asOf: new Date().toISOString().slice(0, 10),
     live,
     diag:
       `wealth countries ${wealth.length}; trade web top ${top.length}; ` +
-      `DBnomics DOT pages ${dotPagesOk}, num_found ${dotNumFound}, flows parsed ${raw.length}, arcs shown ${topFlows.length}`,
+      `annual DOT pages ${dotPagesOk}, num_found ${dotNumFound}, flows parsed ${raw.length}, arcs shown ${topFlows.length}; ` +
+      `pulse docs ${pulseDocs}, months ${pulse?.months.length || 0}, corridors ${pulse?.corridors.length || 0}`,
   };
 
-  return <MoneyFlowClient wealth={wealth} flows={topFlows} meta={meta} />;
+  return <MoneyFlowClient wealth={wealth} flows={topFlows} pulse={pulse} meta={meta} />;
 }
