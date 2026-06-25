@@ -12,6 +12,7 @@ export type ArcDatum = {
   endLat: number;
   endLng: number;
   color: [string, string]; // gradient: [from, to]
+  speedMs: number;         // dash animation time — smaller = faster (bigger flow)
   from: string;
   to: string;
   label: string;
@@ -89,7 +90,7 @@ export default function GlobeArcs({ arcs, nodes, onSelect }: Props) {
           arcDashLength={0.4}
           arcDashGap={0.18}
           arcDashInitialGap={() => Math.random()}
-          arcDashAnimateTime={2600}
+          arcDashAnimateTime={(d: object) => (d as ArcDatum).speedMs}
           arcsTransitionDuration={500}
           // ── country nodes (sized by wealth) ──
           pointsData={nodes}
