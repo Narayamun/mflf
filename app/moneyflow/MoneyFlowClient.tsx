@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import GlobeArcs, { ArcDatum, NodeDatum } from "../GlobeArcs";
 
 // ─── Types (shared with the server component in page.tsx) ─────────────────────
@@ -8,21 +8,23 @@ export type Partner = { name: string; valueUSD: number };
 export type WealthRow = {
   name: string; iso2: string; iso3: string; lat: number; lng: number;
   gdpUSD: number;
-  expUSD: number | null;       // total exports within the trade web
-  impUSD: number | null;       // total imports within the trade web
-  netUSD: number | null;       // exports − imports (+ seller, − buyer)
-  tradeToGDP: number | null;   // (exports + imports) / GDP
-  topOut: Partner[];           // biggest export destinations
-  topIn: Partner[];            // biggest import sources
+  expUSD: number | null; impUSD: number | null; netUSD: number | null;
+  tradeToGDP: number | null; topOut: Partner[]; topIn: Partner[];
 };
 export type Flow = {
   from: string; to: string;
   fromLat: number; fromLng: number; toLat: number; toLng: number;
-  valueUSD: number;
-  dominant: boolean;           // heavier (earning) direction of its corridor
+  valueUSD: number; dominant: boolean;
 };
+export type PulseCorridor = {
+  from: string; to: string;
+  fromLat: number; fromLng: number; toLat: number; toLng: number;
+  dominant: boolean;
+  monthly: Record<string, number>; // "YYYY-MM" -> USD
+};
+export type Pulse = { months: string[]; corridors: PulseCorridor[] };
 export type MFMeta = { asOf: string; live: string[]; diag?: string };
-export type Props = { wealth: WealthRow[]; flows: Flow[]; meta: MFMeta };
+export type Props = { wealth: WealthRow[]; flows: Flow[]; pulse: Pulse | null; meta: MFMeta };
 
 type SortKey = "wealth" | "name" | "net" | "trade";
 
@@ -39,6 +41,11 @@ function signedMoney(v: number) {
   return "$0";
 }
 const pct = (x: number) => (x * 100).toFixed(0) + "%";
+const monthLabel = (m: string) => {
+  const [y, mo] = m.split("-");
+  const names = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return (names[parseInt(mo, 10)] || mo) + " " + y;
+};
 
 const card: React.CSSProperties = { border: "1px solid #e3e3e3", borderRadius: 10, padding: 16, background: "#fff" };
 const chip = (active: boolean): React.CSSProperties => ({
@@ -48,12 +55,39 @@ const chip = (active: boolean): React.CSSProperties => ({
 });
 const th: React.CSSProperties = { padding: 8, cursor: "pointer", whiteSpace: "nowrap" };
 
-export default function MoneyFlowClient({ wealth, flows, meta }: Props) {
+// Warm = earning (heavier) direction; cool = spending side.
+const arcColor = (warm: boolean, a: number): [string, string] =>
+  warm ? [`rgba(245,190,90,${a})`, "rgba(245,190,90,0.04)"] : [`rgba(95,170,235,${a})`, "rgba(95,170,235,0.04)"];
+
+export default function MoneyFlowClient({ wealth, flows, pulse, meta }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("wealth");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
-  // Globe nodes: every wealth country, sized by log-GDP so giants don't erase the rest.
+  // Pulse (monthly animation) state.
+  const [pulseOn, setPulseOn] = useState(false);
+  const [playing, setPlaying] = useState(true);
+  const [monthIdx, setMonthIdx] = useState(0);
+  const monthsLen = pulse?.months.length ?? 0;
+
+  useEffect(() => {
+    if (!pulseOn || !playing || monthsLen === 0) return;
+    const id = setInterval(() => setMonthIdx((i) => (i + 1) % monthsLen), 1100);
+    return () => clearInterval(id);
+  }, [pulseOn, playing, monthsLen]);
+
+  // Stable value range for the pulse, across the whole window (so sizing doesn't jump).
+  const pulseRange = useMemo(() => {
+    if (!pulse) return null;
+    let lo = Infinity, hi = -Infinity;
+    for (const c of pulse.corridors) for (const k of Object.keys(c.monthly)) {
+      const v = Math.log10(c.monthly[k]);
+      if (v < lo) lo = v; if (v > hi) hi = v;
+    }
+    if (!isFinite(lo) || !isFinite(hi)) return null;
+    return { lo, span: hi - lo || 1 };
+  }, [pulse]);
+
   const nodes: NodeDatum[] = useMemo(() => {
     if (!wealth.length) return [];
     const logs = wealth.map((w) => Math.log10(w.gdpUSD));
@@ -71,32 +105,47 @@ export default function MoneyFlowClient({ wealth, flows, meta }: Props) {
     });
   }, [wealth, selected]);
 
-  // Arcs: warm = the earning (heavier) direction of a corridor, cool = the spending side.
-  // Dash speed scales with flow size, so heavy corridors visibly rush.
+  const curMonth = pulse && monthsLen ? pulse.months[Math.min(monthIdx, monthsLen - 1)] : null;
+
+  // Arcs: annual (static) OR one month of the pulse.
   const arcs: ArcDatum[] = useMemo(() => {
+    const tip = (a: string, b: string, val: number, extra: string) =>
+      `<div style="font:13px system-ui;padding:5px 9px;background:#111;color:#fff;border-radius:5px">`
+      + `<b>${a} → ${b}</b><br/>${extra} ${money(val)}</div>`;
+
+    if (pulseOn && pulse && pulseRange && curMonth) {
+      let src = pulse.corridors.filter((c) => typeof c.monthly[curMonth] === "number");
+      if (selected) src = src.filter((c) => c.from === selected || c.to === selected);
+      return src.map((c) => {
+        const val = c.monthly[curMonth];
+        const t = (Math.log10(val) - pulseRange.lo) / pulseRange.span; // 0..1
+        const speedMs = 3400 - t * 2800;
+        const a = 0.3 + t * 0.65; // swell: heavier months glow stronger
+        return {
+          startLat: c.fromLat, startLng: c.fromLng, endLat: c.toLat, endLng: c.toLng,
+          color: arcColor(c.dominant, a), speedMs, from: c.from, to: c.to,
+          label: tip(c.from, c.to, val, monthLabel(curMonth) + ":"),
+        };
+      });
+    }
+
     if (!flows.length) return [];
     const logs = flows.map((f) => Math.log10(f.valueUSD));
     const lo = Math.min(...logs), hi = Math.max(...logs);
     const span = hi - lo || 1;
     const src = selected ? flows.filter((f) => f.from === selected || f.to === selected) : flows;
     return src.map((f) => {
-      const t = (Math.log10(f.valueUSD) - lo) / span;     // 0 small … 1 large
-      const speedMs = 3600 - t * 2900;                     // large → ~700ms (fast)
+      const t = (Math.log10(f.valueUSD) - lo) / span;
+      const speedMs = 3600 - t * 2900;
       const a = selected ? 0.95 : 0.6;
-      const warm = f.dominant;
-      const col: [string, string] = warm
-        ? [`rgba(245,190,90,${a})`, "rgba(245,190,90,0.04)"]
-        : [`rgba(95,170,235,${a})`, "rgba(95,170,235,0.04)"];
       return {
         startLat: f.fromLat, startLng: f.fromLng, endLat: f.toLat, endLng: f.toLng,
-        color: col, speedMs, from: f.from, to: f.to,
-        label: `<div style="font:13px system-ui;padding:5px 9px;background:#111;color:#fff;border-radius:5px">`
-          + `<b>${f.from} → ${f.to}</b><br/>exports ${money(f.valueUSD)}</div>`,
+        color: arcColor(f.dominant, a), speedMs, from: f.from, to: f.to,
+        label: tip(f.from, f.to, f.valueUSD, "exports"),
       };
     });
-  }, [flows, selected]);
+  }, [flows, selected, pulseOn, pulse, pulseRange, curMonth]);
 
-  // Sorted wealth list. Null trade metrics always sink to the bottom.
   const rows = useMemo(() => {
     const nz = (v: number | null) => (v == null ? (sortDir === "asc" ? Infinity : -Infinity) : v);
     return [...wealth].sort((a, b) => {
@@ -152,10 +201,31 @@ export default function MoneyFlowClient({ wealth, flows, meta }: Props) {
         {meta.diag && <><br /><span style={{ fontFamily: "monospace", color: "#aaa" }}>{meta.diag}</span></>}
       </div>
 
+      {/* ── Pulse controls ── */}
+      {pulse && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+          <button onClick={() => { setPulseOn((on) => !on); setMonthIdx(0); setPlaying(true); }} style={chip(pulseOn)}>
+            {pulseOn ? "● Pulse (monthly)" : "○ Pulse (monthly)"}
+          </button>
+          {pulseOn && (
+            <>
+              <button onClick={() => setPlaying((p) => !p)} style={chip(false)}>{playing ? "❚❚ Pause" : "▶ Play"}</button>
+              <input type="range" min={0} max={Math.max(0, monthsLen - 1)} value={Math.min(monthIdx, monthsLen - 1)}
+                onChange={(e) => { setPlaying(false); setMonthIdx(parseInt(e.target.value, 10)); }}
+                style={{ flex: "1 1 160px", maxWidth: 280 }} />
+              <span style={{ fontVariantNumeric: "tabular-nums", fontSize: 13, fontWeight: 700, minWidth: 78 }}>
+                {curMonth ? monthLabel(curMonth) : ""}
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
       <GlobeArcs arcs={arcs} nodes={nodes} onSelect={(name) => setSelected(name === selected ? null : name)} />
       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "0 0 20px" }}>
         <p style={{ fontSize: 11, color: "#aaa", margin: 0 }}>
           Drag to rotate. Click a country to see only its flows; click again to release.
+          {pulseOn && " Pulse shows the heaviest corridors, month by month."}
           {flows.length === 0 && " (Trade flows couldn't be loaded — see the diagnostic above.)"}
         </p>
         {selected && <button onClick={() => setSelected(null)} style={chip(false)}>Clear {selected}</button>}
