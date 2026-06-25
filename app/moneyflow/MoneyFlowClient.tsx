@@ -22,7 +22,7 @@ export type PulseCorridor = {
   dominant: boolean;
   monthly: Record<string, number>; // "YYYY-MM" -> USD
 };
-export type Pulse = { months: string[]; corridors: PulseCorridor[] };
+export type Pulse = { months: string[]; corridors: PulseCorridor[]; totals: Record<string, number> };
 export type MFMeta = { asOf: string; live: string[]; diag?: string };
 export type Props = { wealth: WealthRow[]; flows: Flow[]; pulse: Pulse | null; meta: MFMeta };
 
@@ -217,6 +217,22 @@ export default function MoneyFlowClient({ wealth, flows, pulse, meta }: Props) {
                 {curMonth ? monthLabel(curMonth) : ""}
               </span>
             </>
+          )}
+        </div>
+      )}
+
+      {/* ── World-total headline (moves with the pulse) ── */}
+      {pulseOn && pulse && curMonth && (
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 10,
+          padding: "10px 14px", borderRadius: 10, background: "#06070d", color: "#f3e2bb" }}>
+          <span style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.5px", fontVariantNumeric: "tabular-nums" }}>
+            {typeof pulse.totals[curMonth] === "number" ? money(pulse.totals[curMonth]) : "—"}
+          </span>
+          <span style={{ fontSize: 13, color: "#caa45a" }}>
+            in goods crossed borders worldwide · {monthLabel(curMonth)}
+          </span>
+          {curMonth === pulse.months[monthsLen - 1] && (
+            <span style={{ fontSize: 11, color: "#8a7a52", fontStyle: "italic" }}>latest month — may be partial as reports arrive</span>
           )}
         </div>
       )}
