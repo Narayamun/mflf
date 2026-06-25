@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Globe, { GlobePoint } from "./Globe";
+import Trajectory, { TrajPoint } from "./Trajectory";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 const GG = 28; // generation gap in years (maps years → descendant generations)
@@ -13,6 +14,14 @@ function velocityColor(velocity: number) {
 }
 
 // ─── Types (shared with the server component in page.tsx) ─────────────────────
+// One year of the three IMF flows the trajectory needs (all as decimal fractions).
+export type SeriesPoint = {
+  year: number;
+  debtToGDP: number;
+  primaryBalance: number;
+  taxToGDP: number;
+};
+
 export type Country = {
   name: string;
   iso3: string;
@@ -28,6 +37,7 @@ export type Country = {
   gdpGrowth: number;   // real GDP growth (for the debt-snowball test)
   gdp: number;         // nominal USD
   pppFactor: number;   // GDP_PPP / GDP_nominal
+  series: SeriesPoint[]; // per-year debt / primary balance / revenue, oldest→newest
 };
 
 export type Meta = { asOf: string; live: string[]; curated: string[]; diag?: string };
@@ -77,7 +87,35 @@ function compute(c: Country, opts: Opts) {
   };
 }
 
-// ─── Formatting ───────────────────────────────────────────────────────────────
+// Per-year velocity for the trajectory chart. Uses the SAME rate() and denominator
+// as compute(), so the chart reacts to the interest and working-life lenses.
+// Plotted as a PERCENTAGE (velocity × 100), not lives/year: population is fetched
+// latest-only, so a lives figure would smear today's population across past years.
+// Historical = years ≤ now (solid). Projection = IMF forecast years, capped at +5
+// (dashed). We deliberately do NOT fabricate an "own extrapolation" tier — every
+// point on the line is a real IMF figure; the only assumption is the flagged rate,
+// and that sits only in the interest term (the government term is pure IMF data).
+const PROJ_CAP_YEARS = 5;
+function buildTrajectory(c: Country, opts: Opts): TrajPoint[] {
+  if (!c.series || c.series.length < 2) return [];
+  const i = rate(c, opts);
+  const wy = opts.wy;
+  const curY = new Date().getFullYear();
+  const cap = curY + PROJ_CAP_YEARS;
+  const out: TrajPoint[] = [];
+  for (const s of c.series) {
+    if (s.year > cap) continue;
+    if (s.taxToGDP <= 0) continue;
+    const denom = s.taxToGDP * wy;
+    const interestFlow = (i * s.debtToGDP) / denom; // assumed-rate term
+    const govFlow = -s.primaryBalance / denom;       // pure IMF primary balance
+    const velocity = interestFlow + govFlow;
+    out.push({ year: s.year, velocityPct: velocity * 100, projected: s.year > curY });
+  }
+  return out;
+}
+
+
 const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
 const signed = (n: number) => (n > 0 ? "+" : n < 0 ? "−" : "") + fmt(Math.abs(n));
 
@@ -348,6 +386,7 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
       {/* ── Detail panel ── */}
       {sel && (() => {
         const r = compute(sel, opts);
+        const traj = buildTrajectory(sel, opts);
         const lifetimeTax = sel.gdp * sel.taxToGDP * wy;
         const interestBill = r.i * sel.debtToGDP * sel.gdp;
         let reach: React.ReactNode;
@@ -397,6 +436,21 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
                 share moves from {(r.LFF * 100).toFixed(1)}% to <b>{(r.nextGenLFF * 100).toFixed(1)}%</b> —
                 the line {sel.popGrowth >= 0 ? "widens and dilutes the claim" : "narrows and concentrates the claim on fewer shoulders"}.
               </p>
+            )}
+
+            {/* VELOCITY TRAJECTORY */}
+            {traj.length >= 2 && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: "#555", marginBottom: 4 }}>
+                  Velocity over time<Info text={TIP.velocity} />
+                </div>
+                <Trajectory data={traj} />
+                <p style={{ fontSize: 11, color: "#888", margin: "6px 0 0", lineHeight: 1.5 }}>
+                  Debt, primary balance and revenue are IMF figures (history solid, forecast dashed, capped at five
+                  years). The government term is pure IMF data; only the interest term carries the flagged rate, so
+                  the line shifts with the interest and working-life lenses.
+                </p>
+              </div>
             )}
 
             {/* TRIBUTE + DEBT STATUS */}
