@@ -185,7 +185,11 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
     if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(key); setSortDir("desc"); }
   };
-  const arrow = (k: SortKey) => (sortKey === k ? (sortDir === "desc" ? " ▼" : " ▲") : "");
+  const arrow = (k: SortKey) => (
+    <span style={{ color: sortKey === k ? "#222" : "#c5c5c5", fontSize: 11, marginLeft: 3 }}>
+      {sortKey === k ? (sortDir === "desc" ? "▼" : "▲") : "⇅"}
+    </span>
+  );
 
   const points: GlobePoint[] = countries.map((c) => {
     const r = compute(c, opts);
@@ -303,7 +307,7 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
             <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("velocity")}>Lives / year<Info text={TIP.velocity} />{arrow("velocity")}</th>
             <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("govt")}>…govt adds<Info text={TIP.govt} />{arrow("govt")}</th>
             <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("inherited")}>…inherited<Info text={TIP.inherited} />{arrow("inherited")}</th>
-            <th style={{ padding: 8 }}>Direction</th>
+            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("velocity")}>Direction{arrow("velocity")}</th>
           </tr>
         </thead>
         <tbody>
