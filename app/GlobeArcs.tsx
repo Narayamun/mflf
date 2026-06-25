@@ -84,7 +84,7 @@ export default function GlobeArcs({ arcs, nodes, onSelect }: Props) {
           arcEndLng={(d: object) => (d as ArcDatum).endLng}
           arcColor={(d: object) => (d as ArcDatum).color}
           arcLabel={(d: object) => (d as ArcDatum).label}
-          arcStroke={0.5}
+          arcStroke={0.32}
           arcAltitudeAutoScale={0.4}
           arcDashLength={0.4}
           arcDashGap={0.18}
