@@ -189,7 +189,7 @@ export default async function MoneyFlow() {
     seedByPair.set(fa + ">" + ta, r);
     corridorIds.push("IMF/DOT/M." + fa + ".TXG_FOB_USD." + ta);
   }
-  const worldIds = top.map((w) => "IMF/DOT/M." + w.iso2 + ".TXG_FOB_USD.W00");
+  const worldIds = geo.map((g) => "IMF/DOT/M." + g.iso2 + ".TXG_FOB_USD.W00");
   const allIds = ["IMF/DOT/M.W00.TXG_FOB_USD.W00", ...corridorIds, ...worldIds];
 
   const monthlyByPair: Record<string, Record<string, number>> = {};
