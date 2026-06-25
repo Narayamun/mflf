@@ -2,9 +2,9 @@ import MoneyFlowClient, { WealthRow, Flow, MFMeta } from "./MoneyFlowClient";
 
 // How many of the largest economies form the trade web (reporters AND partners).
 // Chosen dynamically from live GDP below — never hardcoded.
-const TOP_N = 40;
+const TOP_N = 80;
 // Cap on arcs drawn at rest, largest-first, so the globe reads as flow not mud.
-const MAX_ARCS = 130;
+const MAX_ARCS = 400;
 
 // ─── Fetch helper (server-side: sidesteps CORS, incl. APIs that block browsers) ──
 async function safeJSON(url: string, revalidate: number): Promise<any> {
