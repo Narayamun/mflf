@@ -2,7 +2,7 @@ import MoneyFlowClient, { WealthRow, Flow, MFMeta, Partner } from "./MoneyFlowCl
 
 // How many of the largest economies form the trade web (reporters AND partners).
 // Chosen dynamically from live GDP below — never hardcoded.
-const TOP_N = 80;
+const TOP_N = 135;
 // Cap on arcs drawn at rest, largest-first, so the globe reads as flow not mud.
 const MAX_ARCS = 400;
 
@@ -108,7 +108,7 @@ export default async function MoneyFlow() {
       "https://api.db.nomics.world/v22/series/IMF/DOT?observations=1&format=json&limit=1000" +
       "&dimensions=" + encodeURIComponent(JSON.stringify(dims));
 
-    for (let page = 0; page < 12; page++) {
+    for (let page = 0; page < 20; page++) {
       const json = await safeJSON(baseUrl + "&offset=" + page * 1000, 86400);
       const series = json?.series;
       const docs = Array.isArray(series?.docs) ? series.docs : null;
