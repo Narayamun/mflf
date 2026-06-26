@@ -30,7 +30,8 @@ export type Country = {
   debtToGDP: number;
   taxToGDP: number;
   primaryBalance: number;
-  realRate: number;
+  nomRate: number;     // nominal effective interest rate on debt (interest ÷ debt)
+  rateLive: boolean;   // true = derived from IMF data; false = 1% fallback
   inflation: number;
   population: number;
   popGrowth: number;
@@ -48,10 +49,13 @@ type Opts = { useReal: boolean; manualRate: number | null; currency: Currency; w
 type SortKey = "name" | "position" | "velocity" | "govt" | "inherited" | "nextgen";
 
 // ─── Core maths (verified against handoff §2.6) ───────────────────────────────
+// The interest rate the metric applies. The "real" rate is floored at 0: inflation
+// can neutralise the real interest burden but never reverse it (you don't get paid
+// to owe) — the same principle as the BTC lens. Nominal/BTC use the full effective rate.
 function rate(c: Country, { useReal, manualRate, currency }: Opts) {
   if (manualRate != null) return manualRate;
-  if (currency === "btc") return c.realRate + c.inflation; // hard money: inflation cannot erase the claim
-  return useReal ? c.realRate : c.realRate + c.inflation;
+  if (currency === "btc") return c.nomRate; // hard money: the full nominal claim stands
+  return useReal ? Math.max(0, c.nomRate - c.inflation) : c.nomRate;
 }
 
 function compute(c: Country, opts: Opts) {
@@ -74,7 +78,8 @@ function compute(c: Country, opts: Opts) {
   const tribLives = tribLifeShare * c.population;
 
   // debt snowball (structural, real terms): pb* = (realRate − realGrowth) * debt/GDP
-  const pbStar = (c.realRate - c.gdpGrowth) * c.debtToGDP;
+  const realRate = Math.max(0, c.nomRate - c.inflation);
+  const pbStar = (realRate - c.gdpGrowth) * c.debtToGDP;
   const snowballing = c.primaryBalance < pbStar;
   const borrowingForInterest = c.primaryBalance < 0;
 
@@ -471,6 +476,19 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
                 : <span style={{ color: "#070", fontWeight: 600 }}>Stabilising</span>}
               {" "}— the debt ratio {r.snowballing ? "rises" : "holds or falls"} on its own at current real rates and growth
               {r.borrowingForInterest ? ", and the country is currently borrowing to cover its interest." : "."}
+            </p>
+
+            <p style={{ margin: "10px 0 0", fontSize: 13, color: "#555" }}>
+              <b>Effective interest rate:</b>{" "}
+              {sel.rateLive
+                ? <>
+                    {(Math.max(0, sel.nomRate - sel.inflation) * 100).toFixed(1)}% real · {(sel.nomRate * 100).toFixed(1)}% nominal{" "}
+                    <span style={{ color: "#888" }}>
+                      — live from IMF (interest ÷ debt)
+                      {sel.nomRate - sel.inflation < 0 ? "; inflation outpaces it, so the real rate floors at 0%" : ""}
+                    </span>
+                  </>
+                : <span style={{ color: "#888" }}>1.0% real assumed — no live interest data for this country</span>}
             </p>
 
             <p style={{ fontSize: 12, color: "#888", marginTop: 14, lineHeight: 1.5, fontStyle: "italic" }}>
