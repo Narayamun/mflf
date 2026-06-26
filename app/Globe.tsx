@@ -10,8 +10,8 @@ export type GlobePoint = {
   name: string;
   lat: number;
   lng: number;
-  altitude: number; // scaled Position (bar height)
-  color: string;    // from Velocity
+  altitude: number; // (no longer used for poles; kept for compatibility)
+  color: string;    // R/Y/G from Velocity
   label: string;    // HTML tooltip
 };
 
@@ -82,23 +82,35 @@ export default function Globe({ points, onSelect }: Props) {
           globeImageUrl="//unpkg.com/three-globe/example/img/earth-dark.jpg"
           atmosphereColor="#caa45a"
           atmosphereAltitude={0.18}
-          // ── gold country borders (faint fill; the metric is shown by the bars) ──
+          // ── gold country borders ──
           polygonsData={polygons}
           polygonAltitude={() => 0.008}
           polygonCapColor={() => "rgba(255,205,90,0.05)"}
           polygonSideColor={() => "rgba(255,200,72,0.08)"}
           polygonStrokeColor={() => "rgba(255,200,72,0.8)"}
           polygonsTransitionDuration={0}
-          // ── metric bars (height = Position, colour = Velocity) ──
+          // ── status dots (colour = Velocity: green surfacing / amber / red sinking) ──
           pointsData={points}
           pointLat={(d: object) => (d as GlobePoint).lat}
           pointLng={(d: object) => (d as GlobePoint).lng}
-          pointAltitude={(d: object) => (d as GlobePoint).altitude}
+          pointAltitude={() => 0.005}
           pointColor={(d: object) => (d as GlobePoint).color}
-          pointRadius={0.6}
+          pointRadius={0.42}
           pointLabel={(d: object) => (d as GlobePoint).label}
-          pointsTransitionDuration={600}
+          pointsTransitionDuration={0}
           onPointClick={(d: object) => onSelect((d as GlobePoint).name)}
+          // ── country names inside their borders; click a name for its detail ──
+          labelsData={points}
+          labelLat={(d: object) => (d as GlobePoint).lat}
+          labelLng={(d: object) => (d as GlobePoint).lng}
+          labelText={(d: object) => (d as GlobePoint).name}
+          labelColor={() => "rgba(240,240,245,0.92)"}
+          labelSize={0.95}
+          labelResolution={2}
+          labelAltitude={0.01}
+          labelIncludeDot={false}
+          labelLabel={(d: object) => (d as GlobePoint).label}
+          onLabelClick={(d: object) => onSelect((d as GlobePoint).name)}
         />
       </Boundary>
     </div>
