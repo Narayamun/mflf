@@ -5,6 +5,26 @@ import MGZSClient, { Country, Meta, SeriesPoint } from "./MGZSClient";
 // and can be overridden in-app. NOTE: Position (the ranking) does not use it at all.
 const REAL_RATE = 0.01;
 
+// Effective (implicit) real interest rate on government debt, per country:
+//   interest%GDP = primary balance − overall balance   (both IMF Fiscal Monitor)
+//   nominal rate = interest%GDP ÷ debt%GDP
+//   real rate    = nominal − inflation
+// Returns null when inputs are missing or implausible (caller falls back to REAL_RATE).
+// All inputs are raw IMF percentages (e.g. debt 112.4, pb −1.8, ob −4.6, inflation 3.1).
+function effectiveRealRate(debtPct: number, pbPct: number, obPct: number, infPct: number): number | null {
+  if (!(debtPct > 5)) return null;                 // need a meaningful debt base
+  if (!isFinite(pbPct) || !isFinite(obPct)) return null;
+  const interestPct = pbPct - obPct;               // overall = primary − interest
+  if (interestPct < 0) return null;                // data inconsistency
+  const nominal = interestPct / debtPct;           // both %, ratio is a fraction
+  if (!isFinite(nominal) || nominal < 0 || nominal > 0.3) return null;
+  const inf = isFinite(infPct) ? infPct / 100 : 0.02;
+  let real = nominal - inf;
+  if (real < -0.1) real = -0.1;
+  if (real > 0.25) real = 0.25;
+  return real;
+}
+
 // ─── Fetch helpers ────────────────────────────────────────────────────────────
 async function safeJSON(url: string, revalidate: number): Promise<any> {
   try {
@@ -120,7 +140,7 @@ export default async function Home() {
   const imfRaw = (ind: string) =>
     safeJSON(`https://www.imf.org/external/datamapper/api/v1/${ind}`, 86400);
 
-  const [countryJson, pop, growth, realG, gdpN, gdpP, cpi, debtRaw, pbRaw, revRaw, btcJson] = await Promise.all([
+  const [countryJson, pop, growth, realG, gdpN, gdpP, cpi, debtRaw, pbRaw, revRaw, obRaw, btcJson] = await Promise.all([
     safeJSON("https://api.worldbank.org/v2/country?format=json&per_page=400", 86400),
     wb("SP.POP.TOTL"),
     wb("SP.POP.GROW"),
@@ -131,6 +151,7 @@ export default async function Home() {
     imfRaw("GGXWDG_NGDP"),        // general government gross debt, % of GDP (WEO)
     imfRaw("GGXONLB_G01_GDP_PT"), // general government primary balance, % of GDP (Fiscal Monitor)
     imfRaw("GGR_G01_GDP_PT"),     // general government revenue, % of GDP (Fiscal Monitor) — the denominator
+    imfRaw("GGXCNL_G01_GDP_PT"),  // general government overall balance, % of GDP (Fiscal Monitor) — for the effective rate
     safeJSON("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", 3600),
   ]);
 
@@ -138,6 +159,7 @@ export default async function Home() {
   const debt = parseIMF(debtRaw, "GGXWDG_NGDP");
   const pb = parseIMF(pbRaw, "GGXONLB_G01_GDP_PT");
   const rev = parseIMF(revRaw, "GGR_G01_GDP_PT");
+  const overall = parseIMF(obRaw, "GGXCNL_G01_GDP_PT");
   // Full per-year history per country (drives the trajectory chart).
   const debtSeries = parseIMFSeries(debtRaw, "GGXWDG_NGDP");
   const pbSeries = parseIMFSeries(pbRaw, "GGXONLB_G01_GDP_PT");
@@ -148,16 +170,24 @@ export default async function Home() {
   const num = (x: unknown): x is number => typeof x === "number";
 
   const countries: Country[] = [];
+  let liveRateCount = 0;
   for (const cfg of universe) {
     const code = cfg.iso;
     // Essentials must all be live, or the country is not shown at all (no placeholders).
     if (!num(debt[code]) || !num(rev[code]) || rev[code] <= 0 || !num(pop[code]) || pop[code] <= 0) continue;
+    const liveRate = effectiveRealRate(
+      debt[code],
+      num(pb[code]) ? pb[code] : NaN,
+      num(overall[code]) ? overall[code] : NaN,
+      num(cpi[code]) ? cpi[code] : NaN,
+    );
+    if (liveRate != null) liveRateCount++;
     countries.push({
       name: cfg.name, iso3: code, lat: cfg.lat, lng: cfg.lng,
       debtToGDP: debt[code] / 100,
       taxToGDP: rev[code] / 100,
       primaryBalance: num(pb[code]) ? pb[code] / 100 : 0,
-      realRate: REAL_RATE,
+      realRate: liveRate != null ? liveRate : REAL_RATE,
       inflation: num(cpi[code]) ? cpi[code] / 100 : 0.02,
       population: pop[code],
       popGrowth: num(growth[code]) ? growth[code] / 100 : 0,
@@ -172,6 +202,7 @@ export default async function Home() {
   if (Object.keys(debt).length) live.push("debt (IMF)");
   if (Object.keys(rev).length) live.push("government revenue (IMF, used as the tax base)");
   if (Object.keys(pb).length) live.push("primary balance (IMF)");
+  if (liveRateCount) live.push("effective interest rate (IMF, interest ÷ debt)");
   if (Object.keys(gdpN).length) live.push("GDP, PPP & growth (World Bank)");
   if (Object.keys(pop).length) live.push("population (World Bank)");
   if (Object.keys(cpi).length) live.push("inflation (World Bank)");
@@ -180,8 +211,8 @@ export default async function Home() {
   const meta: Meta = {
     asOf: new Date().toISOString().slice(0, 10),
     live,
-    curated: ["interest rate (assumed 1% real, adjustable in-app)"],
-    diag: `feeds → debt ${Object.keys(debt).length}, revenue ${Object.keys(rev).length}, primary-balance ${Object.keys(pb).length}, population ${Object.keys(pop).length}, gdp ${Object.keys(gdpN).length}; country universe ${universe.length}; countries shown ${countries.length}`,
+    curated: ["interest rate: each country's live effective rate where derivable, otherwise 1% real assumed"],
+    diag: `feeds → debt ${Object.keys(debt).length}, revenue ${Object.keys(rev).length}, primary-balance ${Object.keys(pb).length}, overall-balance ${Object.keys(overall).length}, population ${Object.keys(pop).length}, gdp ${Object.keys(gdpN).length}; live interest rates ${liveRateCount}; country universe ${universe.length}; countries shown ${countries.length}`,
   };
 
   return <MGZSClient countries={countries} btcPrice={btcPrice} meta={meta} />;
