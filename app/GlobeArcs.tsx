@@ -106,15 +106,16 @@ export default function GlobeArcs({ arcs, countries, highlight, onSelect }: Prop
     return null;
   };
 
-  // Transparent "electrical" interior glow, brightness by wealth (never solid).
+  // Transparent "electrical" interior glow. Steep curve so wealth is unmistakable:
+  // poor countries stay dim, the richest blaze near-white.
   const capColor = (feat: object): string => {
     const e = entryFor(feat);
     if (!e) return "rgba(36,42,64,0.05)"; // unlit / no data
     const t = Math.max(0, Math.min(1, e.light));
-    const g = Math.round(238 + t * 17);   // 238..255
-    const b = Math.round(196 + t * 59);   // 196..255 (warm -> electric white)
-    let a = 0.03 + t * 0.20;              // 0.03 .. 0.23 — transparent
-    if (highlight.includes(e.name)) a = Math.min(0.5, a + 0.22);
+    const g = Math.round(236 + t * 19);   // 236..255
+    const b = Math.round(190 + t * 65);   // 190..255 (warm -> electric white)
+    let a = 0.04 + Math.pow(t, 1.35) * 0.62; // 0.04 dim .. 0.66 bright (wealth made obvious)
+    if (highlight.includes(e.name)) a = Math.min(0.85, a + 0.22);
     return `rgba(255,${g},${b},${a.toFixed(3)})`;
   };
 
