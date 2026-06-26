@@ -5,24 +5,20 @@ import MGZSClient, { Country, Meta, SeriesPoint } from "./MGZSClient";
 // and can be overridden in-app. NOTE: Position (the ranking) does not use it at all.
 const REAL_RATE = 0.01;
 
-// Effective (implicit) real interest rate on government debt, per country:
+// Nominal effective (implicit) interest rate on government debt, per country:
 //   interest%GDP = primary balance − overall balance   (both IMF Fiscal Monitor)
 //   nominal rate = interest%GDP ÷ debt%GDP
-//   real rate    = nominal − inflation
-// Returns null when inputs are missing or implausible (caller falls back to REAL_RATE).
-// All inputs are raw IMF percentages (e.g. debt 112.4, pb −1.8, ob −4.6, inflation 3.1).
-function effectiveRealRate(debtPct: number, pbPct: number, obPct: number, infPct: number): number | null {
+// The real rate (nominal − inflation, floored at 0) is derived in the client.
+// Returns null when inputs are missing or implausible (caller falls back).
+// Inputs are raw IMF percentages (e.g. debt 112.4, pb −1.8, ob −4.6).
+function effectiveNominalRate(debtPct: number, pbPct: number, obPct: number): number | null {
   if (!(debtPct > 5)) return null;                 // need a meaningful debt base
   if (!isFinite(pbPct) || !isFinite(obPct)) return null;
   const interestPct = pbPct - obPct;               // overall = primary − interest
   if (interestPct < 0) return null;                // data inconsistency
   const nominal = interestPct / debtPct;           // both %, ratio is a fraction
   if (!isFinite(nominal) || nominal < 0 || nominal > 0.3) return null;
-  const inf = isFinite(infPct) ? infPct / 100 : 0.02;
-  let real = nominal - inf;
-  if (real < -0.1) real = -0.1;
-  if (real > 0.25) real = 0.25;
-  return real;
+  return nominal;
 }
 
 // ─── Fetch helpers ────────────────────────────────────────────────────────────
@@ -175,20 +171,22 @@ export default async function Home() {
     const code = cfg.iso;
     // Essentials must all be live, or the country is not shown at all (no placeholders).
     if (!num(debt[code]) || !num(rev[code]) || rev[code] <= 0 || !num(pop[code]) || pop[code] <= 0) continue;
-    const liveRate = effectiveRealRate(
+    const liveNom = effectiveNominalRate(
       debt[code],
       num(pb[code]) ? pb[code] : NaN,
       num(overall[code]) ? overall[code] : NaN,
-      num(cpi[code]) ? cpi[code] : NaN,
     );
-    if (liveRate != null) liveRateCount++;
+    if (liveNom != null) liveRateCount++;
+    const inflFrac = num(cpi[code]) ? cpi[code] / 100 : 0.02;
     countries.push({
       name: cfg.name, iso3: code, lat: cfg.lat, lng: cfg.lng,
       debtToGDP: debt[code] / 100,
       taxToGDP: rev[code] / 100,
       primaryBalance: num(pb[code]) ? pb[code] / 100 : 0,
-      realRate: liveRate != null ? liveRate : REAL_RATE,
-      inflation: num(cpi[code]) ? cpi[code] / 100 : 0.02,
+      // Live nominal effective rate; fallback keeps the old 1% real (real = nom − inflation).
+      nomRate: liveNom != null ? liveNom : REAL_RATE + inflFrac,
+      rateLive: liveNom != null,
+      inflation: inflFrac,
       population: pop[code],
       popGrowth: num(growth[code]) ? growth[code] / 100 : 0,
       gdpGrowth: num(realG[code]) ? realG[code] / 100 : 0.02,
