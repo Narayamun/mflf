@@ -19,12 +19,17 @@ export type Flow = {
 export type PulseCorridor = {
   from: string; to: string;
   fromLat: number; fromLng: number; toLat: number; toLng: number;
-  dominant: boolean;
-  monthly: Record<string, number>; // "YYYY-MM" -> USD
+  dominant: boolean; monthly: Record<string, number>;
 };
 export type Pulse = { months: string[]; corridors: PulseCorridor[]; totals: Record<string, number> };
 export type MFMeta = { asOf: string; live: string[]; diag?: string };
-export type Props = { wealth: WealthRow[]; flows: Flow[]; pulse: Pulse | null; meta: MFMeta };
+export type Props = {
+  wealth: WealthRow[];
+  flows: Flow[];
+  pulse: Pulse | null;
+  bilateral: Record<string, number>; // "iso3>iso3" -> exports USD (directed)
+  meta: MFMeta;
+};
 
 type SortKey = "wealth" | "name" | "net" | "trade";
 
@@ -54,17 +59,19 @@ const chip = (active: boolean): React.CSSProperties => ({
   background: active ? "#222" : "#fff", color: active ? "#fff" : "#333",
 });
 const th: React.CSSProperties = { padding: 8, cursor: "pointer", whiteSpace: "nowrap" };
-
-// Warm = earning (heavier) direction; cool = spending side.
-const arcColor = (warm: boolean, a: number): [string, string] =>
+const warmCool = (warm: boolean, a: number): [string, string] =>
   warm ? [`rgba(245,190,90,${a})`, "rgba(245,190,90,0.04)"] : [`rgba(95,170,235,${a})`, "rgba(95,170,235,0.04)"];
+const tip = (a: string, b: string, val: number, extra: string) =>
+  `<div style="font:13px system-ui;padding:5px 9px;background:#111;color:#fff;border-radius:5px">`
+  + `<b>${a} → ${b}</b><br/>${extra} ${money(val)}</div>`;
 
-export default function MoneyFlowClient({ wealth, flows, pulse, meta }: Props) {
-  const [selected, setSelected] = useState<string | null>(null);
+export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta }: Props) {
+  // Two-country selection: A only = country info; A+B = their bilateral trade.
+  const [selA, setSelA] = useState<string | null>(null);
+  const [selB, setSelB] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("wealth");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
-  // Pulse (monthly animation) state.
   const [pulseOn, setPulseOn] = useState(false);
   const [playing, setPlaying] = useState(true);
   const [monthIdx, setMonthIdx] = useState(0);
@@ -76,20 +83,25 @@ export default function MoneyFlowClient({ wealth, flows, pulse, meta }: Props) {
     return () => clearInterval(id);
   }, [pulseOn, playing, monthsLen]);
 
-  // Stable value range for the pulse, across the whole window (so sizing doesn't jump).
-  const pulseRange = useMemo(() => {
-    if (!pulse) return null;
-    let lo = Infinity, hi = -Infinity;
-    for (const c of pulse.corridors) for (const k of Object.keys(c.monthly)) {
-      const v = Math.log10(c.monthly[k]);
-      if (v < lo) lo = v; if (v > hi) hi = v;
-    }
-    if (!isFinite(lo) || !isFinite(hi)) return null;
-    return { lo, span: hi - lo || 1 };
-  }, [pulse]);
+  const rowByName = useMemo(() => {
+    const m: Record<string, WealthRow> = {};
+    for (const w of wealth) m[w.name] = w;
+    return m;
+  }, [wealth]);
 
-  // Country light map: brightness 0..1 from log-GDP, keyed by UPPERCASE iso2 AND iso3
-  // so the globe can match either code on the border shapes. No height — wealth = light.
+  // Click handler: 1st pick = A; 2nd (different) = B; clicking A again clears; a
+  // 3rd pick starts over on the new country.
+  const pick = (name: string) => {
+    if (!selA) { setSelA(name); setSelB(null); return; }
+    if (!selB) {
+      if (name === selA) { setSelA(null); return; }
+      setSelB(name); return;
+    }
+    setSelA(name); setSelB(null);
+  };
+  const clearSel = () => { setSelA(null); setSelB(null); };
+  const highlight = [selA, selB].filter((x): x is string => !!x);
+
   const countries: Record<string, CountryLight> = useMemo(() => {
     const map: Record<string, CountryLight> = {};
     if (!wealth.length) return map;
@@ -97,57 +109,75 @@ export default function MoneyFlowClient({ wealth, flows, pulse, meta }: Props) {
     const lo = Math.min(...logs), hi = Math.max(...logs);
     const span = hi - lo || 1;
     for (const w of wealth) {
-      const entry: CountryLight = {
-        light: (Math.log10(w.gdpUSD) - lo) / span,
-        name: w.name,
-        gdp: w.gdpUSD,
-      };
+      const entry: CountryLight = { light: (Math.log10(w.gdpUSD) - lo) / span, name: w.name, gdp: w.gdpUSD };
       if (w.iso2) map[w.iso2.toUpperCase()] = entry;
       if (w.iso3) map[w.iso3.toUpperCase()] = entry;
     }
     return map;
   }, [wealth]);
 
+  const pulseRange = useMemo(() => {
+    if (!pulse) return null;
+    let lo = Infinity, hi = -Infinity;
+    for (const c of pulse.corridors) for (const k of Object.keys(c.monthly)) {
+      const v = Math.log10(c.monthly[k]); if (v < lo) lo = v; if (v > hi) hi = v;
+    }
+    if (!isFinite(lo) || !isFinite(hi)) return null;
+    return { lo, span: hi - lo || 1 };
+  }, [pulse]);
+
   const curMonth = pulse && monthsLen ? pulse.months[Math.min(monthIdx, monthsLen - 1)] : null;
 
-  // Arcs: annual (static) OR one month of the pulse.
   const arcs: ArcDatum[] = useMemo(() => {
-    const tip = (a: string, b: string, val: number, extra: string) =>
-      `<div style="font:13px system-ui;padding:5px 9px;background:#111;color:#fff;border-radius:5px">`
-      + `<b>${a} → ${b}</b><br/>${extra} ${money(val)}</div>`;
+    // Two selected → just the A↔B corridor (annual bilateral), regardless of pulse.
+    if (selA && selB) {
+      const A = rowByName[selA], B = rowByName[selB];
+      if (!A || !B) return [];
+      const ab = bilateral[A.iso3 + ">" + B.iso3];
+      const ba = bilateral[B.iso3 + ">" + A.iso3];
+      const out: ArcDatum[] = [];
+      const mk = (F: WealthRow, T: WealthRow, v: number, warm: boolean): ArcDatum => ({
+        startLat: F.lat, startLng: F.lng, endLat: T.lat, endLng: T.lng,
+        color: warmCool(warm, 0.95), speedMs: 1600, from: F.name, to: T.name, label: tip(F.name, T.name, v, "exports"),
+      });
+      if (typeof ab === "number") out.push(mk(A, B, ab, ab >= (ba || 0)));
+      if (typeof ba === "number") out.push(mk(B, A, ba, ba > (ab || 0)));
+      return out;
+    }
 
+    // Pulse (0 or 1 selected).
     if (pulseOn && pulse && pulseRange && curMonth) {
       let src = pulse.corridors.filter((c) => typeof c.monthly[curMonth] === "number");
-      if (selected) src = src.filter((c) => c.from === selected || c.to === selected);
+      if (selA) src = src.filter((c) => c.from === selA || c.to === selA);
       return src.map((c) => {
         const val = c.monthly[curMonth];
-        const t = (Math.log10(val) - pulseRange.lo) / pulseRange.span; // 0..1
+        const t = (Math.log10(val) - pulseRange.lo) / pulseRange.span;
         const speedMs = 3400 - t * 2800;
-        const a = 0.3 + t * 0.65; // swell: heavier months glow stronger
+        const a = 0.3 + t * 0.65;
         return {
           startLat: c.fromLat, startLng: c.fromLng, endLat: c.toLat, endLng: c.toLng,
-          color: arcColor(c.dominant, a), speedMs, from: c.from, to: c.to,
+          color: warmCool(c.dominant, a), speedMs, from: c.from, to: c.to,
           label: tip(c.from, c.to, val, monthLabel(curMonth) + ":"),
         };
       });
     }
 
+    // Annual (0 or 1 selected).
     if (!flows.length) return [];
     const logs = flows.map((f) => Math.log10(f.valueUSD));
     const lo = Math.min(...logs), hi = Math.max(...logs);
     const span = hi - lo || 1;
-    const src = selected ? flows.filter((f) => f.from === selected || f.to === selected) : flows;
+    const src = selA ? flows.filter((f) => f.from === selA || f.to === selA) : flows;
     return src.map((f) => {
       const t = (Math.log10(f.valueUSD) - lo) / span;
       const speedMs = 3600 - t * 2900;
-      const a = selected ? 0.95 : 0.6;
+      const a = selA ? 0.95 : 0.6;
       return {
         startLat: f.fromLat, startLng: f.fromLng, endLat: f.toLat, endLng: f.toLng,
-        color: arcColor(f.dominant, a), speedMs, from: f.from, to: f.to,
-        label: tip(f.from, f.to, f.valueUSD, "exports"),
+        color: warmCool(f.dominant, a), speedMs, from: f.from, to: f.to, label: tip(f.from, f.to, f.valueUSD, "exports"),
       };
     });
-  }, [flows, selected, pulseOn, pulse, pulseRange, curMonth]);
+  }, [flows, selA, selB, pulseOn, pulse, pulseRange, curMonth, bilateral, rowByName]);
 
   const rows = useMemo(() => {
     const nz = (v: number | null) => (v == null ? (sortDir === "asc" ? Infinity : -Infinity) : v);
@@ -183,28 +213,26 @@ export default function MoneyFlowClient({ wealth, flows, pulse, meta }: Props) {
     );
   }
 
-  const sel = selected ? wealth.find((w) => w.name === selected) : null;
+  const A = selA ? rowByName[selA] : null;
+  const B = selB ? rowByName[selB] : null;
   const netWord = (v: number) => (v > 0 ? "net seller" : v < 0 ? "net buyer" : "balanced");
 
   return (
     <main style={{ maxWidth: 980, margin: "40px auto", padding: 24, fontFamily: "system-ui, sans-serif", color: "#1a1a1a", background: "#fff", borderRadius: 14 }}>
       <h1 style={{ fontSize: 26, marginBottom: 4 }}>MoneyFlow</h1>
       <p style={{ color: "#666", marginBottom: 12, fontSize: 14, lineHeight: 1.5 }}>
-        Wealth as moving life-force. Each arc is money flowing between countries — the value of goods one economy
-        sells another. <b style={{ color: "#b88227" }}>Warm</b> arcs are the earning direction of a corridor,
-        {" "}<b style={{ color: "#3f7fc4" }}>cool</b> arcs the spending side; the bigger the flow, the faster it rushes.
-        Each glowing point is a nation, sized by its wealth.
+        Wealth as moving life-force. Countries glow by wealth, edged in gold; each arc is money flowing between them —
+        <b style={{ color: "#b88227" }}> warm</b> = the earning direction, <b style={{ color: "#3f7fc4" }}>cool</b> = the
+        spending side; bigger flows rush faster. Click one country for its profile, a second to see the trade between them.
       </p>
 
       <div style={{ fontSize: 11, color: "#888", marginBottom: 16, lineHeight: 1.5, borderLeft: "3px solid #ddd", paddingLeft: 10 }}>
         <b>Live</b> ({meta.asOf}): {meta.live.length ? meta.live.join(", ") : "—"}.<br />
         Trade is goods only (services excluded) among the largest economies — most of world trade, not all; countries
-        outside that web show “—”. Wealth is GDP, the live measure of economic size; a true total-wealth stock isn&apos;t
-        published live for every country, so it is not shown.
+        outside that web show “—”. Wealth is GDP, the live measure of economic size.
         {meta.diag && <><br /><span style={{ fontFamily: "monospace", color: "#aaa" }}>{meta.diag}</span></>}
       </div>
 
-      {/* ── Pulse controls ── */}
       {pulse && (
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
           <button onClick={() => { setPulseOn((on) => !on); setMonthIdx(0); setPlaying(true); }} style={chip(pulseOn)}>
@@ -224,53 +252,90 @@ export default function MoneyFlowClient({ wealth, flows, pulse, meta }: Props) {
         </div>
       )}
 
-      {/* ── World-total headline (moves with the pulse) ── */}
       {pulseOn && pulse && curMonth && (
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 10,
           padding: "10px 14px", borderRadius: 10, background: "#06070d", color: "#f3e2bb" }}>
           <span style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.5px", fontVariantNumeric: "tabular-nums" }}>
             {typeof pulse.totals[curMonth] === "number" ? money(pulse.totals[curMonth]) : "—"}
           </span>
-          <span style={{ fontSize: 13, color: "#caa45a" }}>
-            in goods crossed borders worldwide · {monthLabel(curMonth)}
-          </span>
+          <span style={{ fontSize: 13, color: "#caa45a" }}>in goods crossed borders worldwide · {monthLabel(curMonth)}</span>
           {curMonth === pulse.months[monthsLen - 1] && (
             <span style={{ fontSize: 11, color: "#8a7a52", fontStyle: "italic" }}>latest month — may be partial as reports arrive</span>
           )}
         </div>
       )}
 
-      <GlobeArcs arcs={arcs} countries={countries} selected={selected} onSelect={(name) => setSelected(name === selected ? null : name)} />
+      <GlobeArcs arcs={arcs} countries={countries} highlight={highlight} onSelect={pick} />
       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "0 0 20px" }}>
         <p style={{ fontSize: 11, color: "#aaa", margin: 0 }}>
-          Drag to rotate. Click a country to see only its flows; click again to release.
-          {pulseOn && " Pulse shows the heaviest corridors, month by month."}
-          {flows.length === 0 && " (Trade flows couldn't be loaded — see the diagnostic above.)"}
+          Drag to rotate. Hover an arc for its value; click a country (the arcs pass the click through to the land beneath).
+          Click a second country to compare the two.
         </p>
-        {selected && <button onClick={() => setSelected(null)} style={chip(false)}>Clear {selected}</button>}
+        {(selA || selB) && <button onClick={clearSel} style={chip(false)}>Clear selection</button>}
       </div>
 
-      {sel && (
-        <div style={{ ...card, marginBottom: 20 }}>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>{sel.name}</div>
-          <div style={{ display: "flex", gap: 22, flexWrap: "wrap", margin: "8px 0", fontSize: 13 }}>
-            <span>Wealth (GDP): <b>{money(sel.gdpUSD)}</b></span>
-            {sel.expUSD != null && <span>Exports: <b>{money(sel.expUSD)}</b></span>}
-            {sel.impUSD != null && <span>Imports: <b>{money(sel.impUSD)}</b></span>}
-            {sel.netUSD != null && (
-              <span>Net: <b style={{ color: sel.netUSD >= 0 ? "#1a7a3a" : "#b03030" }}>
-                {signedMoney(sel.netUSD)} ({netWord(sel.netUSD)})</b></span>
+      {/* Two countries selected → bilateral trade */}
+      {A && B && (() => {
+        const ab = bilateral[A.iso3 + ">" + B.iso3];
+        const ba = bilateral[B.iso3 + ">" + A.iso3];
+        const has = typeof ab === "number" || typeof ba === "number";
+        const aSell = typeof ab === "number" ? ab : 0;
+        const bSell = typeof ba === "number" ? ba : 0;
+        const total = aSell + bSell;
+        const net = aSell - bSell;
+        return (
+          <div style={{ ...card, marginBottom: 20 }}>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>{A.name} ↔ {B.name}</div>
+            {has ? (
+              <>
+                <div style={{ display: "flex", gap: 22, flexWrap: "wrap", margin: "8px 0", fontSize: 13 }}>
+                  <span>{A.name} sells to {B.name}: <b>{money(aSell)}</b></span>
+                  <span>{B.name} sells to {A.name}: <b>{money(bSell)}</b></span>
+                  <span>Two-way total: <b>{money(total)}</b></span>
+                  {total > 0 && (
+                    <span>Balance: <b style={{ color: net >= 0 ? "#1a7a3a" : "#b03030" }}>
+                      {net >= 0 ? A.name : B.name} runs the surplus ({money(Math.abs(net))})</b></span>
+                  )}
+                </div>
+                <p style={{ fontSize: 12, color: "#999", margin: 0 }}>
+                  Goods totals only — IMF DOTS doesn&apos;t break trade into product categories, so this is who sells how
+                  much to whom, not what.
+                </p>
+              </>
+            ) : (
+              <p style={{ fontSize: 13, color: "#555", margin: "8px 0 0" }}>
+                No bilateral goods trade between {A.name} and {B.name} is recorded in the data — one or both may sit
+                outside the major-economy trade web.
+              </p>
             )}
-            {sel.tradeToGDP != null && <span>Trade / GDP: <b>{pct(sel.tradeToGDP)}</b></span>}
+            <button onClick={clearSel} style={{ ...chip(false), marginTop: 12 }}>Clear selection</button>
           </div>
-          {(sel.topOut.length > 0 || sel.topIn.length > 0) ? (
+        );
+      })()}
+
+      {/* One country selected → its profile */}
+      {A && !B && (
+        <div style={{ ...card, marginBottom: 20 }}>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>{A.name}</div>
+          <div style={{ display: "flex", gap: 22, flexWrap: "wrap", margin: "8px 0", fontSize: 13 }}>
+            <span>Wealth (GDP): <b>{money(A.gdpUSD)}</b></span>
+            {A.expUSD != null && <span>Exports: <b>{money(A.expUSD)}</b></span>}
+            {A.impUSD != null && <span>Imports: <b>{money(A.impUSD)}</b></span>}
+            {A.netUSD != null && (
+              <span>Net: <b style={{ color: A.netUSD >= 0 ? "#1a7a3a" : "#b03030" }}>
+                {signedMoney(A.netUSD)} ({netWord(A.netUSD)})</b></span>
+            )}
+            {A.tradeToGDP != null && <span>Trade / GDP: <b>{pct(A.tradeToGDP)}</b></span>}
+          </div>
+          {(A.topOut.length > 0 || A.topIn.length > 0) ? (
             <div style={{ fontSize: 12, color: "#444", lineHeight: 1.6 }}>
-              {sel.topOut.length > 0 && <div>Sells most to: {sel.topOut.map((p) => `${p.name} (${money(p.valueUSD)})`).join(", ")}</div>}
-              {sel.topIn.length > 0 && <div>Buys most from: {sel.topIn.map((p) => `${p.name} (${money(p.valueUSD)})`).join(", ")}</div>}
+              {A.topOut.length > 0 && <div>Sells most to: {A.topOut.map((p) => `${p.name} (${money(p.valueUSD)})`).join(", ")}</div>}
+              {A.topIn.length > 0 && <div>Buys most from: {A.topIn.map((p) => `${p.name} (${money(p.valueUSD)})`).join(", ")}</div>}
             </div>
           ) : (
             <p style={{ fontSize: 12, color: "#999", margin: 0 }}>Outside the major-economy trade web — no bilateral flows shown.</p>
           )}
+          <p style={{ fontSize: 12, color: "#888", margin: "10px 0 0" }}>Click another country to see the trade between them.</p>
         </div>
       )}
 
@@ -285,10 +350,9 @@ export default function MoneyFlowClient({ wealth, flows, pulse, meta }: Props) {
         </thead>
         <tbody>
           {rows.map((w, idx) => {
-            const isSel = selected === w.name;
+            const isSel = selA === w.name || selB === w.name;
             return (
-              <tr key={w.iso3}
-                onClick={() => setSelected(isSel ? null : w.name)}
+              <tr key={w.iso3} onClick={() => pick(w.name)}
                 style={{ borderBottom: "1px solid #eee", cursor: "pointer", background: isSel ? "#fbf3df" : "transparent" }}>
                 <td style={{ padding: 8, fontWeight: 600 }}>
                   <span style={{ color: "#bbb", marginRight: 6 }}>{idx + 1}</span>{w.name}
@@ -306,9 +370,8 @@ export default function MoneyFlowClient({ wealth, flows, pulse, meta }: Props) {
         </tbody>
       </table>
       <p style={{ fontSize: 11, color: "#aaa", marginTop: 8 }}>
-        {wealth.length} countries. Sort by Country (A–Z / Z–A), Wealth, Net seller/buyer (surplus → deficit), or
-        Trade / GDP. Net is goods exports − imports: <span style={{ color: "#1a7a3a" }}>+ sells more</span>,
-        {" "}<span style={{ color: "#b03030" }}>− buys more</span>. Click a country to light its flows.
+        {wealth.length} countries. Sort by Country, Wealth, Net seller/buyer, or Trade / GDP. Click a country (here or on
+        the globe) to select it; click a second to compare; “Clear selection” resets.
       </p>
     </main>
   );
