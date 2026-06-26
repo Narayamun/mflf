@@ -36,6 +36,42 @@ async function safeJSON(url: string, revalidate: number): Promise<any> {
 }
 
 // World Bank country universe (names + capital coordinates), aggregates removed.
+// World Bank uses some awkward official names; map them to the common short form.
+// (Borders match by ISO code, not name, so renaming is safe everywhere.)
+const NAME_FIX: Record<string, string> = {
+  "Viet Nam": "Vietnam",
+  "Korea, Rep.": "South Korea",
+  "Korea, Dem. People's Rep.": "North Korea",
+  "Russian Federation": "Russia",
+  "Egypt, Arab Rep.": "Egypt",
+  "Iran, Islamic Rep.": "Iran",
+  "Venezuela, RB": "Venezuela",
+  "Yemen, Rep.": "Yemen",
+  "Congo, Dem. Rep.": "DR Congo",
+  "Congo, Rep.": "Congo",
+  "Lao PDR": "Laos",
+  "Syrian Arab Republic": "Syria",
+  "Slovak Republic": "Slovakia",
+  "Kyrgyz Republic": "Kyrgyzstan",
+  "Gambia, The": "Gambia",
+  "Bahamas, The": "Bahamas",
+  "Brunei Darussalam": "Brunei",
+  "Hong Kong SAR, China": "Hong Kong",
+  "Macao SAR, China": "Macao",
+  "Micronesia, Fed. Sts.": "Micronesia",
+  "Türkiye": "Turkey",
+  "Turkiye": "Turkey",
+  "West Bank and Gaza": "Palestine",
+  "Taiwan, China": "Taiwan",
+  "Cabo Verde": "Cape Verde",
+  "Cote d'Ivoire": "Ivory Coast",
+  "Côte d'Ivoire": "Ivory Coast",
+  "St. Kitts and Nevis": "St Kitts & Nevis",
+  "St. Vincent and the Grenadines": "St Vincent",
+  "Timor-Leste": "Timor-Leste",
+};
+const fixName = (n: string): string => NAME_FIX[n] || n;
+
 function parseCountries(json: any): { iso: string; name: string; lat: number; lng: number }[] {
   const rows = Array.isArray(json) ? json[1] : null;
   if (!Array.isArray(rows)) return [];
@@ -48,7 +84,7 @@ function parseCountries(json: any): { iso: string; name: string; lat: number; ln
     if (!iso || !name) continue;
     if (r?.region?.value === "Aggregates") continue;
     if (Number.isNaN(lat) || Number.isNaN(lng)) continue;
-    out.push({ iso, name, lat, lng });
+    out.push({ iso, name: fixName(name), lat, lng });
   }
   return out;
 }
