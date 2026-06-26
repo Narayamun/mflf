@@ -17,7 +17,12 @@ export type GlobePoint = {
 
 type Props = { points: GlobePoint[]; onSelect: (name: string) => void };
 
-// Keeps a WebGL/library failure contained — the rest of the page stays alive.
+// Country borders (Natural Earth 110m) — same gold-edged look as the MoneyFlow globe.
+const POLY_URLS = [
+  "https://cdn.jsdelivr.net/gh/vasturiano/globe.gl@master/example/datasets/ne_110m_admin_0_countries.geojson",
+  "https://raw.githubusercontent.com/vasturiano/globe.gl/master/example/datasets/ne_110m_admin_0_countries.geojson",
+];
+
 class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
@@ -38,6 +43,7 @@ class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
 export default function Globe({ points, onSelect }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(700);
+  const [polygons, setPolygons] = useState<object[]>([]);
 
   useEffect(() => {
     const update = () => {
@@ -48,18 +54,42 @@ export default function Globe({ points, onSelect }: Props) {
     return () => window.removeEventListener("resize", update);
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      for (const url of POLY_URLS) {
+        try {
+          const res = await fetch(url);
+          if (!res.ok) continue;
+          const gj = await res.json();
+          if (alive && Array.isArray(gj?.features)) { setPolygons(gj.features); return; }
+        } catch { /* try next */ }
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
   return (
     <div
       ref={wrapRef}
-      style={{ background: "#0b1020", borderRadius: 12, overflow: "hidden", marginBottom: 24, minHeight: 460 }}
+      style={{ background: "#06070d", borderRadius: 12, overflow: "hidden", marginBottom: 24, minHeight: 460 }}
     >
       <Boundary>
         <GlobeGl
           width={width}
           height={460}
-          backgroundColor="#0b1020"
-          globeImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
-          atmosphereColor="#5577aa"
+          backgroundColor="#06070d"
+          globeImageUrl="//unpkg.com/three-globe/example/img/earth-dark.jpg"
+          atmosphereColor="#caa45a"
+          atmosphereAltitude={0.18}
+          // ── gold country borders (faint fill; the metric is shown by the bars) ──
+          polygonsData={polygons}
+          polygonAltitude={() => 0.008}
+          polygonCapColor={() => "rgba(255,205,90,0.05)"}
+          polygonSideColor={() => "rgba(255,200,72,0.08)"}
+          polygonStrokeColor={() => "rgba(255,200,72,0.8)"}
+          polygonsTransitionDuration={0}
+          // ── metric bars (height = Position, colour = Velocity) ──
           pointsData={points}
           pointLat={(d: object) => (d as GlobePoint).lat}
           pointLng={(d: object) => (d as GlobePoint).lng}
