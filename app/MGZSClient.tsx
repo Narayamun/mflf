@@ -187,7 +187,7 @@ const chip = (active: boolean): React.CSSProperties => ({
 });
 
 export default function MGZSClient({ countries, btcPrice, meta }: Props) {
-  const [useReal, setUseReal] = useState(false);
+  const [useReal, setUseReal] = useState(true);
   const [manualOn, setManualOn] = useState(false);
   const [manualRate, setManualRate] = useState(0.05);
   const [currency, setCurrency] = useState<Currency>("usd");
@@ -264,7 +264,7 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
 
       <div style={{ fontSize: 11, color: "#888", marginBottom: 20, lineHeight: 1.5, borderLeft: "3px solid #ddd", paddingLeft: 10 }}>
         <b>Live</b> ({meta.asOf}): {meta.live.join(", ")}.<br />
-        <b>Assumed</b>: {meta.curated.join(", ")}. Position (the ranking) does not depend on it.<br />
+        <b>Interest</b>: {meta.curated.join(", ")}. Position (the ranking) doesn&apos;t use the rate at all.<br />
         The denominator is government revenue, slightly broader than pure tax, so resource-rich states read a little lighter than a tax-only measure would show.
         {meta.diag && <><br /><span style={{ fontFamily: "monospace", color: "#aaa" }}>{meta.diag}</span></>}
       </div>
@@ -447,8 +447,8 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
                 <Trajectory data={traj} />
                 <p style={{ fontSize: 11, color: "#888", margin: "6px 0 0", lineHeight: 1.5 }}>
                   Debt, primary balance and revenue are IMF figures (history solid, forecast dashed, capped at five
-                  years). The government term is pure IMF data; only the interest term carries the flagged rate, so
-                  the line shifts with the interest and working-life lenses.
+                  years). The government term is pure IMF data; the interest term uses each country&apos;s live effective
+                  rate, so the line shifts with the interest and working-life lenses.
                 </p>
               </div>
             )}
