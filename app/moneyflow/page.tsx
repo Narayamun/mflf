@@ -1,19 +1,31 @@
 import MoneyFlowClient, { WealthRow, Flow, MFMeta, Partner, Pulse, PulseCorridor } from "./MoneyFlowClient";
 
+// Render on demand, NOT at build time. This page does many live fetches; letting
+// Next statically prerender it at build is what made the build fail. maxDuration
+// gives the on-demand render room; fetchCache keeps the daily caching behaviour.
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-cache";
+export const maxDuration = 60;
+
 const TOP_N = 135;
 const MAX_ARCS = 400;
 const PULSE_CORRIDORS = 60;
 
 async function safeJSON(url: string, revalidate: number): Promise<any> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 9000);
   try {
     const res = await fetch(url, {
       next: { revalidate },
+      signal: ctrl.signal,
       headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; MGZS-MoneyFlow/1.0)" },
     } as RequestInit);
     if (!res.ok) return null;
     return await res.json();
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
