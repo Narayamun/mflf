@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import GlobeArcs, { ArcDatum, NodeDatum } from "../GlobeArcs";
+import GlobeArcs, { ArcDatum, CountryLight } from "../GlobeArcs";
 
 // ─── Types (shared with the server component in page.tsx) ─────────────────────
 export type Partner = { name: string; valueUSD: number };
@@ -88,22 +88,25 @@ export default function MoneyFlowClient({ wealth, flows, pulse, meta }: Props) {
     return { lo, span: hi - lo || 1 };
   }, [pulse]);
 
-  const nodes: NodeDatum[] = useMemo(() => {
-    if (!wealth.length) return [];
+  // Country light map: brightness 0..1 from log-GDP, keyed by UPPERCASE iso2 AND iso3
+  // so the globe can match either code on the border shapes. No height — wealth = light.
+  const countries: Record<string, CountryLight> = useMemo(() => {
+    const map: Record<string, CountryLight> = {};
+    if (!wealth.length) return map;
     const logs = wealth.map((w) => Math.log10(w.gdpUSD));
     const lo = Math.min(...logs), hi = Math.max(...logs);
     const span = hi - lo || 1;
-    return wealth.map((w) => {
-      const size = (Math.log10(w.gdpUSD) - lo) / span;
-      const isSel = selected === w.name;
-      return {
-        name: w.name, lat: w.lat, lng: w.lng, size,
-        color: isSel ? "#fff3d6" : "#caa45a",
-        label: `<div style="font:13px system-ui;padding:5px 9px;background:#111;color:#fff;border-radius:5px">`
-          + `<b>${w.name}</b><br/>wealth ${money(w.gdpUSD)}</div>`,
+    for (const w of wealth) {
+      const entry: CountryLight = {
+        light: (Math.log10(w.gdpUSD) - lo) / span,
+        name: w.name,
+        gdp: w.gdpUSD,
       };
-    });
-  }, [wealth, selected]);
+      if (w.iso2) map[w.iso2.toUpperCase()] = entry;
+      if (w.iso3) map[w.iso3.toUpperCase()] = entry;
+    }
+    return map;
+  }, [wealth]);
 
   const curMonth = pulse && monthsLen ? pulse.months[Math.min(monthIdx, monthsLen - 1)] : null;
 
@@ -237,7 +240,7 @@ export default function MoneyFlowClient({ wealth, flows, pulse, meta }: Props) {
         </div>
       )}
 
-      <GlobeArcs arcs={arcs} nodes={nodes} onSelect={(name) => setSelected(name === selected ? null : name)} />
+      <GlobeArcs arcs={arcs} countries={countries} selected={selected} onSelect={(name) => setSelected(name === selected ? null : name)} />
       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "0 0 20px" }}>
         <p style={{ fontSize: 11, color: "#aaa", margin: 0 }}>
           Drag to rotate. Click a country to see only its flows; click again to release.
