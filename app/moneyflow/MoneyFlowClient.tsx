@@ -208,7 +208,9 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
         <p style={{ color: "#555", fontSize: 14, lineHeight: 1.6 }}>
           Live data couldn&apos;t be loaded right now. Rather than show placeholder figures, nothing is displayed. Please refresh in a moment.
         </p>
+        {/* Diagnostic line — kept commented for feed-health debugging; uncomment to surface meta.diag:
         {meta.diag && <p style={{ color: "#aaa", fontSize: 11, fontFamily: "monospace" }}>{meta.diag}</p>}
+        */}
       </main>
     );
   }
@@ -230,7 +232,9 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
         <b>Live</b> ({meta.asOf}): {meta.live.length ? meta.live.join(", ") : "—"}.<br />
         Trade is goods only (services excluded) among the largest economies — most of world trade, not all; countries
         outside that web show “—”. Wealth is GDP, the live measure of economic size.
+        {/* Diagnostic line — kept commented for feed-health debugging; uncomment to surface meta.diag:
         {meta.diag && <><br /><span style={{ fontFamily: "monospace", color: "#aaa" }}>{meta.diag}</span></>}
+        */}
       </div>
 
       {pulse && (
