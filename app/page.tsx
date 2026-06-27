@@ -1,5 +1,9 @@
 import MGZSClient, { Country, Meta, SeriesPoint } from "./MGZSClient";
 
+// The IMF DataMapper returns the full dataset per indicator (several MB each), which
+// can be slow; give the regeneration function room so the fetches aren't cut short.
+export const maxDuration = 60;
+
 // Assumed real borrowing rate. No clean free universal source for the effective
 // rate on government debt, so one flagged assumption is applied to every country
 // and can be overridden in-app. NOTE: Position (the ranking) does not use it at all.
@@ -26,18 +30,22 @@ async function safeJSON(url: string, revalidate: number, retries = 2): Promise<a
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 12000);
+      // Generous: IMF DataMapper returns the whole dataset (several MB) and can be slow.
+      const timer = setTimeout(() => ctrl.abort(), 45000);
       const res = await fetch(url, {
         next: { revalidate },
         signal: ctrl.signal,
-        headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; MGZS/1.0)" },
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        },
       } as RequestInit);
       clearTimeout(timer);
       if (res.ok) return await res.json();
     } catch {
       /* network/timeout — fall through to retry */
     }
-    if (attempt < retries) await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+    if (attempt < retries) await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
   }
   return null;
 }
