@@ -51,16 +51,26 @@ class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
 
 export default function Globe({ points, onSelect }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(700);
+  const [size, setSize] = useState({ width: 700, height: 460 });
   const [polygons, setPolygons] = useState<object[]>([]);
 
+  // Responsive sizing: follow the container's width (capped) and derive the height
+  // from it, so the globe scales down cleanly on phones and up on wide screens.
+  // ResizeObserver catches container reflow (e.g. the side panel appearing or wrapping),
+  // which a window-resize listener alone would miss.
   useEffect(() => {
-    const update = () => {
-      if (wrapRef.current) setWidth(Math.min(wrapRef.current.clientWidth, 900));
+    const el = wrapRef.current;
+    if (!el) return;
+    const measure = () => {
+      const w = Math.min(el.clientWidth, 900);
+      const h = Math.round(Math.min(Math.max(w * 0.72, 300), 520));
+      setSize((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }));
     };
-    update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener("resize", measure);
+    return () => { ro.disconnect(); window.removeEventListener("resize", measure); };
   }, []);
 
   useEffect(() => {
@@ -113,12 +123,12 @@ export default function Globe({ points, onSelect }: Props) {
   return (
     <div
       ref={wrapRef}
-      style={{ background: "#0e1220", borderRadius: 12, overflow: "hidden", marginBottom: 24, minHeight: 460 }}
+      style={{ background: "#0e1220", borderRadius: 12, overflow: "hidden", marginBottom: 24, height: size.height, minHeight: 300 }}
     >
       <Boundary>
         <GlobeGl
-          width={width}
-          height={460}
+          width={size.width}
+          height={size.height}
           backgroundColor="#0e1220"
           globeImageUrl="//unpkg.com/three-globe/example/img/earth-dark.jpg"
           atmosphereColor="#caa45a"
