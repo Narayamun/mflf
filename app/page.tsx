@@ -52,49 +52,53 @@ async function safeJSON(url: string, revalidate: number, retries = 2): Promise<a
 
 // IMF's own DataMapper refuses some server hosts (e.g. Vercel), so the fiscal figures
 // are pulled from the DBnomics WEO mirror — the same source MoneyFlow uses reliably from
-// Vercel — and reshaped into the DataMapper format the rest of this file expects.
-// Returns { <weo-subject>: { <ISO3>: { <year>: value } } }.
-function pickDim(doc: any, key: string): string | null {
-  const flat = doc?.[key];
-  if (typeof flat === "string") return flat;
-  const nested = doc?.dimensions?.[key];
-  if (typeof nested === "string") return nested;
-  return null;
+// Vercel. Fetched ONE INDICATOR AT A TIME so each response stays under Next.js's 2MB data
+// cache limit, and reshaped into { <subject>: { <ISO3>: { <year>: value } } }.
+function weoCountry(doc: any): string | null {
+  // DBnomics WEO series_code is like "FRA.GGXWDG_NGDP.pcent_gdp" → country is the first part.
+  const code = doc?.series_code;
+  if (typeof code === "string" && code.length) {
+    const first = code.split(".")[0];
+    if (first) return first.toUpperCase();
+  }
+  const flat = doc?.["weo-country"] ?? doc?.dimensions?.["weo-country"] ?? doc?.country;
+  return typeof flat === "string" ? flat.toUpperCase() : null;
+}
+async function fetchSubject(rel: string, subj: string): Promise<Record<string, Record<string, number>>> {
+  const out: Record<string, Record<string, number>> = {};
+  const dims = encodeURIComponent(JSON.stringify({ "weo-subject": [subj] }));
+  for (let offset = 0; offset < 3000; offset += 1000) {
+    const url =
+      `https://api.db.nomics.world/v22/series/IMF/${rel}?observations=1&format=json&limit=1000` +
+      "&offset=" + offset + "&dimensions=" + dims;
+    const json = await safeJSON(url, 86400);
+    const docs = json?.series?.docs;
+    if (!Array.isArray(docs) || docs.length === 0) break;
+    for (const doc of docs) {
+      const iso = weoCountry(doc);
+      const periods = doc?.period;
+      const vals = doc?.value;
+      if (!iso || !Array.isArray(periods) || !Array.isArray(vals)) continue;
+      const m = out[iso] || (out[iso] = {});
+      for (let k = 0; k < periods.length; k++) {
+        const v = vals[k];
+        if (typeof v === "number" && !Number.isNaN(v)) m[String(periods[k]).slice(0, 4)] = v;
+      }
+    }
+    if (docs.length < 1000) break;
+  }
+  return out;
 }
 async function fetchWEO(): Promise<Record<string, Record<string, Record<string, number>>>> {
-  const subjects = ["GGXWDG_NGDP", "GGXONLB_NGDP", "GGXCNL_NGDP", "GGR_NGDP"];
-  const dims = encodeURIComponent(JSON.stringify({ "weo-subject": subjects }));
-  // Try the alias first (freshest), then concrete releases — so we never depend on
-  // whether the WEO:latest redirect preserves the query string.
+  // Try the freshest alias first, then concrete releases (in case the alias query-string redirect misbehaves).
   const releases = ["WEO:latest", "WEO:2026-04", "WEO:2025-10", "WEO:2025-04", "WEO:2024-10"];
-
   for (const rel of releases) {
-    const out: Record<string, Record<string, Record<string, number>>> = {};
-    for (const s of subjects) out[s] = {};
-    for (let offset = 0; offset < 8000; offset += 1000) {
-      const url =
-        `https://api.db.nomics.world/v22/series/IMF/${rel}?observations=1&format=json&limit=1000` +
-        "&offset=" + offset + "&dimensions=" + dims;
-      const json = await safeJSON(url, 3600);
-      const docs = json?.series?.docs;
-      if (!Array.isArray(docs) || docs.length === 0) break;
-      for (const doc of docs) {
-        const iso = pickDim(doc, "weo-country");
-        const subj = pickDim(doc, "weo-subject");
-        if (!iso || !subj || !out[subj]) continue;
-        const periods = doc?.period;
-        const vals = doc?.value;
-        if (!Array.isArray(periods) || !Array.isArray(vals)) continue;
-        const m = out[subj][iso] || (out[subj][iso] = {});
-        for (let k = 0; k < periods.length; k++) {
-          const v = vals[k];
-          if (typeof v === "number" && !Number.isNaN(v)) m[String(periods[k]).slice(0, 4)] = v;
-        }
-      }
-      if (docs.length < 1000) break;
-    }
-    // Accept this release only if it actually delivered debt data for many countries.
-    if (Object.keys(out.GGXWDG_NGDP).length > 20) return out;
+    const debt = await fetchSubject(rel, "GGXWDG_NGDP");
+    if (Object.keys(debt).length <= 20) continue; // this release didn't deliver — try the next
+    const pb = await fetchSubject(rel, "GGXONLB_NGDP");
+    const ob = await fetchSubject(rel, "GGXCNL_NGDP");
+    const rev = await fetchSubject(rel, "GGR_NGDP");
+    return { GGXWDG_NGDP: debt, GGXONLB_NGDP: pb, GGXCNL_NGDP: ob, GGR_NGDP: rev };
   }
   return { GGXWDG_NGDP: {}, GGXONLB_NGDP: {}, GGXCNL_NGDP: {}, GGR_NGDP: {} };
 }
