@@ -1,5 +1,7 @@
 "use client";
 
+import { T } from "./theme";
+
 // Pure-SVG line chart (no chart dependency, keeps the copy-paste build lean).
 // One series: velocity as a percentage — share of a working life mortgaged (+,
 // sinking) or freed (−, surfacing) per year. Plotted as a fraction on purpose:
@@ -18,7 +20,7 @@ const pctLabel = (n: number) => (n > 0 ? "+" : n < 0 ? "−" : "") + Math.abs(n)
 export default function Trajectory({ data }: { data: TrajPoint[] }) {
   if (data.length < 2) {
     return (
-      <p style={{ fontSize: 12, color: "#888", fontStyle: "italic", margin: "8px 0" }}>
+      <p style={{ fontSize: 12, color: T.muted, fontStyle: "italic", margin: "8px 0" }}>
         Not enough yearly data points to draw a trajectory for this country.
       </p>
     );
@@ -64,15 +66,15 @@ export default function Trajectory({ data }: { data: TrajPoint[] }) {
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxWidth: W, display: "block" }} role="img"
         aria-label="Velocity over time: share of a working life mortgaged or freed per year">
         {/* sinking / surfacing background tint */}
-        <rect x={padL} y={padT} width={innerW} height={Math.max(0, zeroY - padT)} fill="#fdecec" />
-        <rect x={padL} y={zeroY} width={innerW} height={Math.max(0, padT + innerH - zeroY)} fill="#eafaef" />
+        <rect x={padL} y={padT} width={innerW} height={Math.max(0, zeroY - padT)} fill={T.bandDown} />
+        <rect x={padL} y={zeroY} width={innerW} height={Math.max(0, padT + innerH - zeroY)} fill={T.bandUp} />
 
         {/* y ticks + gridlines */}
         {ticks.map((t, i) => (
           <g key={i}>
             <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)}
-              stroke={t === 0 ? "#999" : "#e6e6e6"} strokeWidth={t === 0 ? 1.2 : 1} />
-            <text x={padL - 6} y={y(t) + 3} textAnchor="end" fontSize={10} fill="#888">{pctLabel(t)}</text>
+              stroke={t === 0 ? T.zeroLine : T.grid} strokeWidth={t === 0 ? 1.2 : 1} />
+            <text x={padL - 6} y={y(t) + 3} textAnchor="end" fontSize={10} fill={T.muted}>{pctLabel(t)}</text>
           </g>
         ))}
 
@@ -80,38 +82,38 @@ export default function Trajectory({ data }: { data: TrajPoint[] }) {
         {curYear >= minYear && curYear <= maxYear && (
           <g>
             <line x1={x(curYear)} x2={x(curYear)} y1={padT} y2={padT + innerH}
-              stroke="#bbb" strokeWidth={1} strokeDasharray="2 3" />
-            <text x={x(curYear)} y={padT + innerH + 18} textAnchor="middle" fontSize={9} fill="#aaa">now</text>
+              stroke={T.faint} strokeWidth={1} strokeDasharray="2 3" />
+            <text x={x(curYear)} y={padT + innerH + 18} textAnchor="middle" fontSize={9} fill={T.muted}>now</text>
           </g>
         )}
 
         {/* x labels */}
-        <text x={x(minYear)} y={padT + innerH + 18} textAnchor="start" fontSize={10} fill="#888">{minYear}</text>
-        <text x={x(maxYear)} y={padT + innerH + 18} textAnchor="end" fontSize={10} fill="#888">{maxYear}</text>
+        <text x={x(minYear)} y={padT + innerH + 18} textAnchor="start" fontSize={10} fill={T.muted}>{minYear}</text>
+        <text x={x(maxYear)} y={padT + innerH + 18} textAnchor="end" fontSize={10} fill={T.muted}>{maxYear}</text>
 
         {/* historical (solid) */}
         {histPts.length >= 2 && (
-          <path d={toPath(histPts)} fill="none" stroke="#1a1a1a" strokeWidth={2}
+          <path d={toPath(histPts)} fill="none" stroke={T.text} strokeWidth={2}
             strokeLinejoin="round" strokeLinecap="round" />
         )}
         {/* projection (dashed) */}
         {projPts.length >= 2 && (
-          <path d={toPath(projPts)} fill="none" stroke="#1a1a1a" strokeWidth={2}
+          <path d={toPath(projPts)} fill="none" stroke={T.text} strokeWidth={2}
             strokeDasharray="5 4" strokeLinejoin="round" strokeLinecap="round" opacity={0.65} />
         )}
 
         {/* data dots */}
         {data.map((d) => (
           <circle key={d.year} cx={x(d.year)} cy={y(d.velocityPct)} r={d.projected ? 2 : 2.6}
-            fill={d.velocityPct > 0 ? "#b00" : "#070"} opacity={d.projected ? 0.6 : 1} />
+            fill={d.velocityPct > 0 ? T.down : T.up} opacity={d.projected ? 0.6 : 1} />
         ))}
       </svg>
 
-      <div style={{ display: "flex", gap: 16, fontSize: 11, color: "#888", marginTop: 2, flexWrap: "wrap" }}>
-        <span><span style={{ display: "inline-block", width: 18, borderTop: "2px solid #1a1a1a", verticalAlign: "middle", marginRight: 5 }} />historical (IMF)</span>
-        <span><span style={{ display: "inline-block", width: 18, borderTop: "2px dashed #1a1a1a", verticalAlign: "middle", marginRight: 5, opacity: 0.65 }} />IMF forecast</span>
-        <span style={{ color: "#b00" }}>above 0 = sinking</span>
-        <span style={{ color: "#070" }}>below 0 = surfacing</span>
+      <div style={{ display: "flex", gap: 16, fontSize: 11, color: T.muted, marginTop: 2, flexWrap: "wrap" }}>
+        <span><span style={{ display: "inline-block", width: 18, borderTop: "2px solid " + T.text, verticalAlign: "middle", marginRight: 5 }} />historical (IMF)</span>
+        <span><span style={{ display: "inline-block", width: 18, borderTop: "2px dashed " + T.text, verticalAlign: "middle", marginRight: 5, opacity: 0.65 }} />IMF forecast</span>
+        <span style={{ color: T.down }}>above 0 = sinking</span>
+        <span style={{ color: T.up }}>below 0 = surfacing</span>
       </div>
     </div>
   );
