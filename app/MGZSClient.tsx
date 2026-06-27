@@ -253,7 +253,9 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
           Live data from the IMF and World Bank couldn&apos;t be loaded right now. Rather than show stale or
           placeholder figures, nothing is displayed. Please refresh in a moment.
         </p>
+        {/* Diagnostic line — kept commented for feed-health debugging; uncomment to surface meta.diag:
         {meta.diag && <p style={{ color: "#aaa", fontSize: 11, fontFamily: "monospace" }}>{meta.diag}</p>}
+        */}
       </main>
     );
   }
@@ -271,7 +273,9 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
         <b>Live</b> ({meta.asOf}): {meta.live.join(", ")}.<br />
         <b>Interest</b>: {meta.curated.join(", ")}. Position (the ranking) doesn&apos;t use the rate at all.<br />
         The denominator is government revenue, slightly broader than pure tax, so resource-rich states read a little lighter than a tax-only measure would show.
+        {/* Diagnostic line — kept commented for feed-health debugging; uncomment to surface meta.diag:
         {meta.diag && <><br /><span style={{ fontFamily: "monospace", color: "#aaa" }}>{meta.diag}</span></>}
+        */}
       </div>
 
       {/* ── Lenses ── */}
@@ -333,62 +337,22 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
         </div>
       </div>
 
-      {/* ── Globe ── */}
-      <Globe points={points} onSelect={(name) => setSelected(name === selected ? null : name)} />
-      <p style={{ fontSize: 11, color: "#aaa", margin: "0 0 20px" }}>
-        Bar height = how mortgaged now (Position). Colour = direction (green surfacing, amber/red sinking).
-        Drag to rotate; click a bar for detail.
-      </p>
-
-      {/* ── Table ── */}
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-        <thead>
-          <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd", userSelect: "none" }}>
-            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("name")}>Country{arrow("name")}</th>
-            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("position")}>Mortgaged now<Info text={TIP.position} />{arrow("position")}</th>
-            {genAdjust && <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("nextgen")}>next-gen per head{arrow("nextgen")}</th>}
-            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("velocity")}>Lives / year<Info text={TIP.velocity} />{arrow("velocity")}</th>
-            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("govt")}>…govt adds<Info text={TIP.govt} />{arrow("govt")}</th>
-            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("inherited")}>…inherited<Info text={TIP.inherited} />{arrow("inherited")}</th>
-            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("velocity")}>Direction{arrow("velocity")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map(({ c, r }, idx) => {
-            const freeing = r.livesPerYear < 0;
-            const isSel = selected === c.name;
-            return (
-              <tr key={c.iso3}
-                onClick={() => setSelected(isSel ? null : c.name)}
-                style={{ borderBottom: "1px solid #eee", cursor: "pointer", background: isSel ? "#eef3ff" : "transparent" }}>
-                <td style={{ padding: 8, fontWeight: 600 }}><span style={{ color: "#bbb", marginRight: 6 }}>{idx + 1}</span>{c.name}</td>
-                <td style={{ padding: 8 }}>{(r.LFF * 100).toFixed(1)}% &nbsp;({fmt(r.livesOwed)} lives)</td>
-                {genAdjust && (
-                  <td style={{ padding: 8, color: r.nextGenLFF > r.LFF ? "#b00" : "#070" }}>
-                    {(r.nextGenLFF * 100).toFixed(1)}% {r.nextGenLFF > r.LFF ? "▲" : "▼"}
-                  </td>
-                )}
-                <td style={{ padding: 8, fontWeight: 600, color: freeing ? "#070" : "#b00" }}>{signed(r.livesPerYear)}</td>
-                <td style={{ padding: 8 }}>{signed(r.livesGovt)}</td>
-                <td style={{ padding: 8 }}>{signed(r.livesInherited)}</td>
-                <td style={{ padding: 8, color: freeing ? "#070" : "#b00" }}>{freeing ? "▲ surfacing" : "▼ sinking"}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
-        {countries.length > 20 && (
-          <button onClick={() => setShowAll((s) => !s)} style={chip(showAll)}>
-            {showAll ? `Show top 20` : `Show all ${countries.length}`}
-          </button>
-        )}
-        <span style={{ fontSize: 11, color: "#aaa" }}>
-          Showing {shown.length} of {countries.length}. Click a column to sort, again to reverse. Click a country for its bloodline reach.
-        </span>
-      </div>
-
-      {/* ── Detail panel ── */}
+      {/* ── Globe + detail panel, side by side (panel reachable without scrolling the table) ── */}
+      <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 20 }}>
+        <div style={{ flex: "1.6 1 360px", minWidth: 320 }}>
+          <Globe points={points} onSelect={(name) => setSelected(name === selected ? null : name)} />
+          <p style={{ fontSize: 11, color: "#aaa", margin: 0 }}>
+            Each country glows by its own numbers: colour = direction (green surfacing, amber/red sinking),
+            brightness = how mortgaged now (Position). Drag to rotate; click a country for detail.
+          </p>
+        </div>
+        <div style={{ flex: "1 1 320px", minWidth: 300 }}>
+          {!sel && (
+            <div style={{ ...card, color: "#888", fontSize: 13, lineHeight: 1.6 }}>
+              Click any country — on the globe or in the table — to see its full breakdown here:
+              self reach, bloodline reach, the velocity trajectory, tribute and debt status.
+            </div>
+          )}
       {sel && (() => {
         const r = compute(sel, opts);
         const traj = buildTrajectory(sel, opts);
@@ -413,7 +377,7 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
           );
         }
         return (
-          <div style={{ ...card, marginTop: 20, background: "#fff" }}>
+          <div style={{ ...card, marginTop: 0, background: "#fff" }}>
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>{sel.name}</div>
 
             {/* SELF REACH */}
@@ -498,6 +462,57 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
           </div>
         );
       })()}
+        </div>
+      </div>
+
+      {/* ── Table ── */}
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <thead>
+          <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd", userSelect: "none" }}>
+            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("name")}>Country{arrow("name")}</th>
+            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("position")}>Mortgaged now<Info text={TIP.position} />{arrow("position")}</th>
+            {genAdjust && <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("nextgen")}>next-gen per head{arrow("nextgen")}</th>}
+            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("velocity")}>Lives / year<Info text={TIP.velocity} />{arrow("velocity")}</th>
+            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("govt")}>…govt adds<Info text={TIP.govt} />{arrow("govt")}</th>
+            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("inherited")}>…inherited<Info text={TIP.inherited} />{arrow("inherited")}</th>
+            <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("velocity")}>Direction{arrow("velocity")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map(({ c, r }, idx) => {
+            const freeing = r.livesPerYear < 0;
+            const isSel = selected === c.name;
+            return (
+              <tr key={c.iso3}
+                onClick={() => setSelected(isSel ? null : c.name)}
+                style={{ borderBottom: "1px solid #eee", cursor: "pointer", background: isSel ? "#eef3ff" : "transparent" }}>
+                <td style={{ padding: 8, fontWeight: 600 }}><span style={{ color: "#bbb", marginRight: 6 }}>{idx + 1}</span>{c.name}</td>
+                <td style={{ padding: 8 }}>{(r.LFF * 100).toFixed(1)}% &nbsp;({fmt(r.livesOwed)} lives)</td>
+                {genAdjust && (
+                  <td style={{ padding: 8, color: r.nextGenLFF > r.LFF ? "#b00" : "#070" }}>
+                    {(r.nextGenLFF * 100).toFixed(1)}% {r.nextGenLFF > r.LFF ? "▲" : "▼"}
+                  </td>
+                )}
+                <td style={{ padding: 8, fontWeight: 600, color: freeing ? "#070" : "#b00" }}>{signed(r.livesPerYear)}</td>
+                <td style={{ padding: 8 }}>{signed(r.livesGovt)}</td>
+                <td style={{ padding: 8 }}>{signed(r.livesInherited)}</td>
+                <td style={{ padding: 8, color: freeing ? "#070" : "#b00" }}>{freeing ? "▲ surfacing" : "▼ sinking"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
+        {countries.length > 20 && (
+          <button onClick={() => setShowAll((s) => !s)} style={chip(showAll)}>
+            {showAll ? `Show top 20` : `Show all ${countries.length}`}
+          </button>
+        )}
+        <span style={{ fontSize: 11, color: "#aaa" }}>
+          Showing {shown.length} of {countries.length}. Click a column to sort, again to reverse. Click a country for its bloodline reach.
+        </span>
+      </div>
+
     </main>
   );
 }
