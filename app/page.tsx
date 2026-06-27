@@ -50,6 +50,55 @@ async function safeJSON(url: string, revalidate: number, retries = 2): Promise<a
   return null;
 }
 
+// IMF's own DataMapper refuses some server hosts (e.g. Vercel), so the fiscal figures
+// are pulled from the DBnomics WEO mirror — the same source MoneyFlow uses reliably from
+// Vercel — and reshaped into the DataMapper format the rest of this file expects.
+// Returns { <weo-subject>: { <ISO3>: { <year>: value } } }.
+function pickDim(doc: any, key: string): string | null {
+  const flat = doc?.[key];
+  if (typeof flat === "string") return flat;
+  const nested = doc?.dimensions?.[key];
+  if (typeof nested === "string") return nested;
+  return null;
+}
+async function fetchWEO(): Promise<Record<string, Record<string, Record<string, number>>>> {
+  const subjects = ["GGXWDG_NGDP", "GGXONLB_NGDP", "GGXCNL_NGDP", "GGR_NGDP"];
+  const dims = encodeURIComponent(JSON.stringify({ "weo-subject": subjects }));
+  // Try the alias first (freshest), then concrete releases — so we never depend on
+  // whether the WEO:latest redirect preserves the query string.
+  const releases = ["WEO:latest", "WEO:2026-04", "WEO:2025-10", "WEO:2025-04", "WEO:2024-10"];
+
+  for (const rel of releases) {
+    const out: Record<string, Record<string, Record<string, number>>> = {};
+    for (const s of subjects) out[s] = {};
+    for (let offset = 0; offset < 8000; offset += 1000) {
+      const url =
+        `https://api.db.nomics.world/v22/series/IMF/${rel}?observations=1&format=json&limit=1000` +
+        "&offset=" + offset + "&dimensions=" + dims;
+      const json = await safeJSON(url, 3600);
+      const docs = json?.series?.docs;
+      if (!Array.isArray(docs) || docs.length === 0) break;
+      for (const doc of docs) {
+        const iso = pickDim(doc, "weo-country");
+        const subj = pickDim(doc, "weo-subject");
+        if (!iso || !subj || !out[subj]) continue;
+        const periods = doc?.period;
+        const vals = doc?.value;
+        if (!Array.isArray(periods) || !Array.isArray(vals)) continue;
+        const m = out[subj][iso] || (out[subj][iso] = {});
+        for (let k = 0; k < periods.length; k++) {
+          const v = vals[k];
+          if (typeof v === "number" && !Number.isNaN(v)) m[String(periods[k]).slice(0, 4)] = v;
+        }
+      }
+      if (docs.length < 1000) break;
+    }
+    // Accept this release only if it actually delivered debt data for many countries.
+    if (Object.keys(out.GGXWDG_NGDP).length > 20) return out;
+  }
+  return { GGXWDG_NGDP: {}, GGXONLB_NGDP: {}, GGXCNL_NGDP: {}, GGR_NGDP: {} };
+}
+
 // World Bank country universe (names + capital coordinates), aggregates removed.
 // World Bank uses some awkward official names; map them to the common short form.
 // (Borders match by ISO code, not name, so renaming is safe everywhere.)
@@ -184,8 +233,6 @@ export default async function Home() {
   // so we can derive BOTH the latest value and the full per-year series from one fetch).
   const wb = (code: string) =>
     safeJSON(`https://api.worldbank.org/v2/country/all/indicator/${code}?format=json&mrnev=1&per_page=20000`, 86400).then(parseWB);
-  const imfRaw = (ind: string) =>
-    safeJSON(`https://www.imf.org/external/datamapper/api/v1/${ind}`, 3600);
 
   const [countryJson, pop, growth, realG, gdpN, gdpP, cpi, btcJson] = await Promise.all([
     safeJSON("https://api.worldbank.org/v2/country?format=json&per_page=400", 86400),
@@ -198,22 +245,20 @@ export default async function Home() {
     safeJSON("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", 3600),
   ]);
 
-  // IMF DataMapper fetched ONE AT A TIME (with retry) — firing all four at once can
-  // trip IMF's throttling and wipe the whole page; sequential is far more reliable.
-  const debtRaw = await imfRaw("GGXWDG_NGDP");        // gross debt, % of GDP (WEO)
-  const pbRaw = await imfRaw("GGXONLB_G01_GDP_PT");   // primary balance, % of GDP (FM)
-  const revRaw = await imfRaw("GGR_G01_GDP_PT");      // revenue, % of GDP (FM) — denominator
-  const obRaw = await imfRaw("GGXCNL_G01_GDP_PT");    // overall balance, % of GDP (FM) — effective rate
+  // IMF WEO via DBnomics (www.imf.org is blocked from Vercel) — one paginated query
+  // for all four indicators, all % of GDP from the same WEO release.
+  const weo = await fetchWEO();           // { subject: { ISO3: { year: value } } }
+  const weoRaw = { values: weo };         // shape parseIMF / parseIMFSeries expect
 
   // Latest non-future value per country (drives the current snapshot + ranking).
-  const debt = parseIMF(debtRaw, "GGXWDG_NGDP");
-  const pb = parseIMF(pbRaw, "GGXONLB_G01_GDP_PT");
-  const rev = parseIMF(revRaw, "GGR_G01_GDP_PT");
-  const overall = parseIMF(obRaw, "GGXCNL_G01_GDP_PT");
+  const debt = parseIMF(weoRaw, "GGXWDG_NGDP");
+  const pb = parseIMF(weoRaw, "GGXONLB_NGDP");
+  const rev = parseIMF(weoRaw, "GGR_NGDP");
+  const overall = parseIMF(weoRaw, "GGXCNL_NGDP");
   // Full per-year history per country (drives the trajectory chart).
-  const debtSeries = parseIMFSeries(debtRaw, "GGXWDG_NGDP");
-  const pbSeries = parseIMFSeries(pbRaw, "GGXONLB_G01_GDP_PT");
-  const revSeries = parseIMFSeries(revRaw, "GGR_G01_GDP_PT");
+  const debtSeries = parseIMFSeries(weoRaw, "GGXWDG_NGDP");
+  const pbSeries = parseIMFSeries(weoRaw, "GGXONLB_NGDP");
+  const revSeries = parseIMFSeries(weoRaw, "GGR_NGDP");
 
   const universe = parseCountries(countryJson);
   const btcPrice = typeof btcJson?.bitcoin?.usd === "number" ? btcJson.bitcoin.usd : 95_000;
