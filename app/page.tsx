@@ -22,17 +22,24 @@ function effectiveNominalRate(debtPct: number, pbPct: number, obPct: number): nu
 }
 
 // ─── Fetch helpers ────────────────────────────────────────────────────────────
-async function safeJSON(url: string, revalidate: number): Promise<any> {
-  try {
-    const res = await fetch(url, {
-      next: { revalidate },
-      headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; MGZS/1.0)" },
-    } as RequestInit);
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
+async function safeJSON(url: string, revalidate: number, retries = 2): Promise<any> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 12000);
+      const res = await fetch(url, {
+        next: { revalidate },
+        signal: ctrl.signal,
+        headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; MGZS/1.0)" },
+      } as RequestInit);
+      clearTimeout(timer);
+      if (res.ok) return await res.json();
+    } catch {
+      /* network/timeout — fall through to retry */
+    }
+    if (attempt < retries) await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
   }
+  return null;
 }
 
 // World Bank country universe (names + capital coordinates), aggregates removed.
@@ -170,9 +177,9 @@ export default async function Home() {
   const wb = (code: string) =>
     safeJSON(`https://api.worldbank.org/v2/country/all/indicator/${code}?format=json&mrnev=1&per_page=20000`, 86400).then(parseWB);
   const imfRaw = (ind: string) =>
-    safeJSON(`https://www.imf.org/external/datamapper/api/v1/${ind}`, 86400);
+    safeJSON(`https://www.imf.org/external/datamapper/api/v1/${ind}`, 3600);
 
-  const [countryJson, pop, growth, realG, gdpN, gdpP, cpi, debtRaw, pbRaw, revRaw, obRaw, btcJson] = await Promise.all([
+  const [countryJson, pop, growth, realG, gdpN, gdpP, cpi, btcJson] = await Promise.all([
     safeJSON("https://api.worldbank.org/v2/country?format=json&per_page=400", 86400),
     wb("SP.POP.TOTL"),
     wb("SP.POP.GROW"),
@@ -180,12 +187,15 @@ export default async function Home() {
     wb("NY.GDP.MKTP.CD"),
     wb("NY.GDP.MKTP.PP.CD"),
     wb("FP.CPI.TOTL.ZG"),
-    imfRaw("GGXWDG_NGDP"),        // general government gross debt, % of GDP (WEO)
-    imfRaw("GGXONLB_G01_GDP_PT"), // general government primary balance, % of GDP (Fiscal Monitor)
-    imfRaw("GGR_G01_GDP_PT"),     // general government revenue, % of GDP (Fiscal Monitor) — the denominator
-    imfRaw("GGXCNL_G01_GDP_PT"),  // general government overall balance, % of GDP (Fiscal Monitor) — for the effective rate
     safeJSON("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", 3600),
   ]);
+
+  // IMF DataMapper fetched ONE AT A TIME (with retry) — firing all four at once can
+  // trip IMF's throttling and wipe the whole page; sequential is far more reliable.
+  const debtRaw = await imfRaw("GGXWDG_NGDP");        // gross debt, % of GDP (WEO)
+  const pbRaw = await imfRaw("GGXONLB_G01_GDP_PT");   // primary balance, % of GDP (FM)
+  const revRaw = await imfRaw("GGR_G01_GDP_PT");      // revenue, % of GDP (FM) — denominator
+  const obRaw = await imfRaw("GGXCNL_G01_GDP_PT");    // overall balance, % of GDP (FM) — effective rate
 
   // Latest non-future value per country (drives the current snapshot + ranking).
   const debt = parseIMF(debtRaw, "GGXWDG_NGDP");
