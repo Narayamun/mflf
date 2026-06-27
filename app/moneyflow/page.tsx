@@ -109,14 +109,16 @@ export default async function MoneyFlow() {
   if (topIso2.length > 0) {
     const dims = { FREQ: ["A"], REF_AREA: topIso2, INDICATOR: ["TXG_FOB_USD"], COUNTERPART_AREA: topIso2 };
     const baseUrl =
-      "https://api.db.nomics.world/v22/series/IMF/DOT?observations=1&format=json&limit=1000" +
+      "https://api.db.nomics.world/v22/series/IMF/DOT?observations=1&format=json&limit=600" +
       "&dimensions=" + encodeURIComponent(JSON.stringify(dims));
 
-    for (let page = 0; page < 20; page++) {
-      const json = await safeJSON(baseUrl + "&offset=" + page * 1000, 86400);
+    for (let page = 0; page < 40; page++) {
+      // Smaller pages keep each response under Next.js's 2MB data-cache limit — a single
+      // >2MB response makes the static export of /moneyflow fail and aborts the whole build.
+      const json = await safeJSON(baseUrl + "&offset=" + page * 600, 86400);
       const series = json?.series;
       const docs = Array.isArray(series?.docs) ? series.docs : null;
-      if (!docs) break;
+      if (!docs || docs.length === 0) break;
       dotPagesOk++;
       dotNumFound = typeof series?.num_found === "number" ? series.num_found : dotNumFound;
       for (const doc of docs) {
@@ -139,7 +141,7 @@ export default async function MoneyFlow() {
         (outP[a.iso3] = outP[a.iso3] || []).push({ name: b.name, valueUSD: usd });
         (inP[b.iso3] = inP[b.iso3] || []).push({ name: a.name, valueUSD: usd });
       }
-      if (docs.length < 1000) break;
+      if (docs.length < 600) break;
     }
   }
 
