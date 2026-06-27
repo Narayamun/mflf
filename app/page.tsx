@@ -309,7 +309,7 @@ export default async function Home() {
     asOf: new Date().toISOString().slice(0, 10),
     live,
     curated: ["interest rate: each country's live effective rate where derivable, otherwise 1% real assumed"],
-    diag: `feeds → debt ${Object.keys(debt).length}, revenue ${Object.keys(rev).length}, primary-balance ${Object.keys(pb).length}, overall-balance ${Object.keys(overall).length}, population ${Object.keys(pop).length}, gdp ${Object.keys(gdpN).length}; live interest rates ${liveRateCount}; country universe ${universe.length}; countries shown ${countries.length}`,
+    diag: `source: IMF WEO via DBnomics · feeds → debt ${Object.keys(debt).length}, revenue ${Object.keys(rev).length}, primary-balance ${Object.keys(pb).length}, overall-balance ${Object.keys(overall).length}, population ${Object.keys(pop).length}, gdp ${Object.keys(gdpN).length}; live interest rates ${liveRateCount}; country universe ${universe.length}; countries shown ${countries.length}`,
   };
 
   return <MGZSClient countries={countries} btcPrice={btcPrice} meta={meta} />;
