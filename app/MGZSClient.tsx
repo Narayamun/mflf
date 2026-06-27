@@ -237,8 +237,8 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
   const points: GlobePoint[] = countries.map((c) => {
     const r = compute(c, opts);
     return {
-      name: c.name, lat: c.lat, lng: c.lng,
-      altitude: 0.03 + r.LFF * 2,
+      name: c.name, iso3: c.iso3, lat: c.lat, lng: c.lng,
+      lff: r.LFF,
       color: velocityColor(r.velocity),
       label: `<div style="font:13px system-ui;padding:5px 9px;background:#111;color:#fff;border-radius:5px">`
         + `<b>${c.name}</b><br/>position ${(r.LFF * 100).toFixed(1)}%<br/>velocity ${signed(r.livesPerYear)}/yr</div>`,
