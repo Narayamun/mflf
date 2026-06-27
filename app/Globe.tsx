@@ -107,19 +107,19 @@ export default function Globe({ points, onSelect }: Props) {
     const pt = resolve(feat);
     if (!pt) return "rgba(40,46,66,0.05)"; // country with no score data — faint, just borders
     const t = Math.max(0, Math.min(1, pt.lff / 1.5));
-    return hexToRgba(pt.color, 0.1 + Math.pow(t, 1.2) * 0.55); // 0.10 .. 0.65
+    return hexToRgba(pt.color, 0.3 + Math.pow(t, 0.85) * 0.6); // 0.30 .. 0.90 — clearly visible
   };
 
   return (
     <div
       ref={wrapRef}
-      style={{ background: "#06070d", borderRadius: 12, overflow: "hidden", marginBottom: 24, minHeight: 460 }}
+      style={{ background: "#0e1220", borderRadius: 12, overflow: "hidden", marginBottom: 24, minHeight: 460 }}
     >
       <Boundary>
         <GlobeGl
           width={width}
           height={460}
-          backgroundColor="#06070d"
+          backgroundColor="#0e1220"
           globeImageUrl="//unpkg.com/three-globe/example/img/earth-dark.jpg"
           atmosphereColor="#caa45a"
           atmosphereAltitude={0.18}
