@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Globe, { GlobePoint } from "./Globe";
 import Trajectory, { TrajPoint } from "./Trajectory";
+import { T } from "./theme";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 const GG = 28; // generation gap in years (maps years → descendant generations)
@@ -184,11 +185,11 @@ const TIP = {
 };
 
 // ─── UI ─────────────────────────────────────────────────────────────────────
-const card: React.CSSProperties = { border: "1px solid #e3e3e3", borderRadius: 10, padding: 16, background: "#fafafa" };
+const card: React.CSSProperties = { border: "1px solid " + T.border, borderRadius: 10, padding: 16, background: T.surface };
 const chip = (active: boolean): React.CSSProperties => ({
   padding: "6px 12px", fontSize: 13, cursor: "pointer", borderRadius: 6,
-  border: "1px solid " + (active ? "#222" : "#ccc"),
-  background: active ? "#222" : "#fff", color: active ? "#fff" : "#333",
+  border: "1px solid " + (active ? T.chipActiveBg : T.chipBorder),
+  background: active ? T.chipActiveBg : T.chipBg, color: active ? T.chipActiveText : T.chipText,
 });
 
 export default function MGZSClient({ countries, btcPrice, meta }: Props) {
@@ -229,7 +230,7 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
     else { setSortKey(key); setSortDir("desc"); }
   };
   const arrow = (k: SortKey) => (
-    <span style={{ color: sortKey === k ? "#222" : "#c5c5c5", fontSize: 11, marginLeft: 3 }}>
+    <span style={{ color: sortKey === k ? T.text : T.faint, fontSize: 11, marginLeft: 3 }}>
       {sortKey === k ? (sortDir === "desc" ? "▼" : "▲") : "⇅"}
     </span>
   );
@@ -247,41 +248,41 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
 
   if (countries.length === 0) {
     return (
-      <main style={{ maxWidth: 980, margin: "40px auto", padding: 24, fontFamily: "system-ui, sans-serif", color: "#1a1a1a", background: "#ffffff", borderRadius: 14 }}>
+      <main style={{ maxWidth: 980, margin: "40px auto", padding: 24, fontFamily: "system-ui, sans-serif", color: T.text, background: T.bg, borderRadius: 14 }}>
         <h1 style={{ fontSize: 26, marginBottom: 8 }}>Generation Zero Score</h1>
-        <p style={{ color: "#555", fontSize: 14, lineHeight: 1.6 }}>
+        <p style={{ color: T.text2, fontSize: 14, lineHeight: 1.6 }}>
           Live data from the IMF and World Bank couldn&apos;t be loaded right now. Rather than show stale or
           placeholder figures, nothing is displayed. Please refresh in a moment.
         </p>
         {/* Diagnostic line — kept commented for feed-health debugging; uncomment to surface meta.diag:
-        {meta.diag && <p style={{ color: "#aaa", fontSize: 11, fontFamily: "monospace" }}>{meta.diag}</p>}
+        {meta.diag && <p style={{ color: T.muted, fontSize: 11, fontFamily: "monospace" }}>{meta.diag}</p>}
         */}
       </main>
     );
   }
 
   return (
-    <main style={{ maxWidth: 980, margin: "40px auto", padding: 24, fontFamily: "system-ui, sans-serif", color: "#1a1a1a", background: "#ffffff", borderRadius: 14 }}>
+    <main style={{ maxWidth: 980, margin: "40px auto", padding: 24, fontFamily: "system-ui, sans-serif", color: T.text, background: T.bg, borderRadius: 14 }}>
       <h1 style={{ fontSize: 26, marginBottom: 4 }}>Generation Zero Score</h1>
-      <p style={{ color: "#666", marginBottom: 12, fontSize: 14, lineHeight: 1.5 }}>
+      <p style={{ color: T.text2, marginBottom: 12, fontSize: 14, lineHeight: 1.5 }}>
         <b>Position</b> = how mortgaged this generation is right now (the principal, gives the ranking).
         <b> Velocity</b> = citizen-lifetimes mortgaged (red) or freed (green) per year. Negative means a country is
         buying its citizens back, surfacing toward Generation Zero.
       </p>
 
-      <div style={{ fontSize: 11, color: "#888", marginBottom: 20, lineHeight: 1.5, borderLeft: "3px solid #ddd", paddingLeft: 10 }}>
+      <div style={{ fontSize: 11, color: T.muted, marginBottom: 20, lineHeight: 1.5, borderLeft: "3px solid " + T.accentRule, paddingLeft: 10 }}>
         <b>Live</b> ({meta.asOf}): {meta.live.join(", ")}.<br />
         <b>Interest</b>: {meta.curated.join(", ")}. Position (the ranking) doesn&apos;t use the rate at all.<br />
         The denominator is government revenue, slightly broader than pure tax, so resource-rich states read a little lighter than a tax-only measure would show.
         {/* Diagnostic line — kept commented for feed-health debugging; uncomment to surface meta.diag:
-        {meta.diag && <><br /><span style={{ fontFamily: "monospace", color: "#aaa" }}>{meta.diag}</span></>}
+        {meta.diag && <><br /><span style={{ fontFamily: "monospace", color: T.muted }}>{meta.diag}</span></>}
         */}
       </div>
 
       {/* ── Lenses ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(185px, 1fr))", gap: 12, marginBottom: 20 }}>
         <div style={card}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#888", marginBottom: 8, letterSpacing: 0.5 }}>INTEREST</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8, letterSpacing: 0.5 }}>INTEREST</div>
           <div style={{ display: "flex", gap: 6, marginBottom: 10, opacity: manualOn ? 0.4 : 1 }}>
             <button style={chip(!useReal)} onClick={() => setUseReal(false)}>nominal</button>
             <button style={chip(useReal)} onClick={() => setUseReal(true)}>real</button>
@@ -300,13 +301,13 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
         </div>
 
         <div style={card}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#888", marginBottom: 8, letterSpacing: 0.5 }}>CURRENCY</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8, letterSpacing: 0.5 }}>CURRENCY</div>
           <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
             <button style={chip(currency === "usd")} onClick={() => setCurrency("usd")}>USD</button>
             <button style={chip(currency === "ppp")} onClick={() => setCurrency("ppp")}>PPP</button>
             <button style={chip(currency === "btc")} onClick={() => setCurrency("btc")}>BTC</button>
           </div>
-          <div style={{ fontSize: 11, color: "#888", lineHeight: 1.4 }}>
+          <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.4 }}>
             {currency === "usd" && "Raw dollars: exposes global power asymmetry."}
             {currency === "ppp" && "Purchasing power: same fraction as USD; absolute figures differ."}
             {currency === "btc" && `Hard money (₿ at $${fmt(btcPrice)}): inflation can no longer erase the claim.`}
@@ -314,24 +315,24 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
         </div>
 
         <div style={card}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#888", marginBottom: 8, letterSpacing: 0.5 }}>GENERATIONAL</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8, letterSpacing: 0.5 }}>GENERATIONAL</div>
           <label style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
             <input type="checkbox" checked={genAdjust} onChange={(e) => setGenAdjust(e.target.checked)} />
             spread across descendants
           </label>
-          <div style={{ fontSize: 11, color: "#888", lineHeight: 1.4, marginTop: 8 }}>
+          <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.4, marginTop: 8 }}>
             Growing populations dilute the claim; shrinking ones concentrate it on fewer shoulders.
           </div>
         </div>
 
         <div style={card}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#888", marginBottom: 8, letterSpacing: 0.5 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8, letterSpacing: 0.5 }}>
             WORKING LIFE<Info text={TIP.wy} />
           </div>
           <input type="range" min={35} max={55} step={1} value={wy}
             onChange={(e) => setWy(parseInt(e.target.value))} style={{ width: "100%" }} />
           <div style={{ fontSize: 13, fontWeight: 600 }}>{wy} years</div>
-          <div style={{ fontSize: 11, color: "#888", lineHeight: 1.4, marginTop: 6 }}>
+          <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.4, marginTop: 6 }}>
             Stretch it and watch Position shrink while the debt itself never moves.
           </div>
         </div>
@@ -341,14 +342,14 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
       <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 20 }}>
         <div style={{ flex: "1.6 1 360px", minWidth: 320 }}>
           <Globe points={points} onSelect={(name) => setSelected(name === selected ? null : name)} />
-          <p style={{ fontSize: 11, color: "#aaa", margin: 0 }}>
+          <p style={{ fontSize: 11, color: T.muted, margin: 0 }}>
             Each country glows by its own numbers: colour = direction (green surfacing, amber/red sinking),
             brightness = how mortgaged now (Position). Drag to rotate; click a country for detail.
           </p>
         </div>
         <div style={{ flex: "1 1 320px", minWidth: 300 }}>
           {!sel && (
-            <div style={{ ...card, color: "#888", fontSize: 13, lineHeight: 1.6 }}>
+            <div style={{ ...card, color: T.muted, fontSize: 13, lineHeight: 1.6 }}>
               Click any country — on the globe or in the table — to see its full breakdown here:
               self reach, bloodline reach, the velocity trajectory, tribute and debt status.
             </div>
@@ -363,32 +364,32 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
           const yearsToFree = r.LFF / Math.abs(r.velocity);
           const gens = Math.floor(yearsToFree / GG);
           reach = (
-            <p style={{ margin: "8px 0", color: "#070" }}>
+            <p style={{ margin: "8px 0", color: T.up }}>
               <b>Surfacing.</b> At the current pace the standing claim clears in ~{yearsToFree.toFixed(0)} years —
               &nbsp;<b>{relation(gens)}'s generation is the first born into Generation Zero.</b>
             </p>
           );
         } else {
           reach = (
-            <p style={{ margin: "8px 0", color: "#b00" }}>
+            <p style={{ margin: "8px 0", color: T.down }}>
               <b>Sinking.</b> Under current behaviour the claim grows every year — no descendant in your line is ever
               born free. The trajectory reaches every projectable generation, indefinitely.
             </p>
           );
         }
         return (
-          <div style={{ ...card, marginTop: 0, background: "#fff" }}>
+          <div style={{ ...card, marginTop: 0, background: T.surface }}>
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>{sel.name}</div>
 
             {/* SELF REACH */}
-            <div style={{ fontWeight: 700, fontSize: 13, color: "#555", marginTop: 4 }}>Self reach<Info text={TIP.position} /></div>
-            <p style={{ margin: "4px 0", color: "#333" }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: T.text2, marginTop: 4 }}>Self reach<Info text={TIP.position} /></div>
+            <p style={{ margin: "4px 0", color: T.text2 }}>
               Today's debt equals <b>{(r.LFF * 100).toFixed(1)}%</b> of all the tax this generation pays across a
               working life. Picture it as everyone's taxes for about <b>{r.yearsToClear.toFixed(1)} years</b>
               <Info text={TIP.years} /> going to nothing but the debt. It is bounded, and it stops with you: it does
               not reach your children.
             </p>
-            <p style={{ margin: "4px 0 12px", color: "#8a6d00", fontSize: 13, background: "#fff8e6", border: "1px solid #f0e0a0", borderRadius: 6, padding: "8px 10px" }}>
+            <p style={{ margin: "4px 0 12px", color: T.warnText, fontSize: 13, background: T.warnBg, border: "1px solid " + T.warnBorder, borderRadius: 6, padding: "8px 10px" }}>
               <b>But this is a clean-payoff hypothetical.</b> The principal is almost never repaid. Governments roll it
               over and pay only the interest, so across one generation the interest alone comes to
               about <b>{(r.tribLifeShare * 100).toFixed(1)}%</b> of a working life — about <b>{(r.tribLifeShare / r.LFF).toFixed(1)}×</b>
@@ -397,10 +398,10 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
             </p>
 
             {/* BLOODLINE REACH */}
-            <div style={{ fontWeight: 700, fontSize: 13, color: "#555" }}>Bloodline reach<Info text={TIP.velocity} /></div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: T.text2 }}>Bloodline reach<Info text={TIP.velocity} /></div>
             {reach}
             {genAdjust && (
-              <p style={{ margin: "8px 0", color: "#333" }}>
+              <p style={{ margin: "8px 0", color: T.text2 }}>
                 <b>Branching ({(sel.popGrowth * 100).toFixed(1)}%/yr).</b> One generation down, the per-descendant
                 share moves from {(r.LFF * 100).toFixed(1)}% to <b>{(r.nextGenLFF * 100).toFixed(1)}%</b> —
                 the line {sel.popGrowth >= 0 ? "widens and dilutes the claim" : "narrows and concentrates the claim on fewer shoulders"}.
@@ -410,11 +411,11 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
             {/* VELOCITY TRAJECTORY */}
             {traj.length >= 2 && (
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, color: "#555", marginBottom: 4 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: T.text2, marginBottom: 4 }}>
                   Velocity over time<Info text={TIP.velocity} />
                 </div>
                 <Trajectory data={traj} />
-                <p style={{ fontSize: 11, color: "#888", margin: "6px 0 0", lineHeight: 1.5 }}>
+                <p style={{ fontSize: 11, color: T.muted, margin: "6px 0 0", lineHeight: 1.5 }}>
                   Debt, primary balance and revenue are IMF figures (history solid, forecast dashed, capped at five
                   years). The government term is pure IMF data; the interest term uses each country&apos;s live effective
                   rate, so the line shifts with the interest and working-life lenses.
@@ -423,39 +424,39 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
             )}
 
             {/* TRIBUTE + DEBT STATUS */}
-            <div style={{ display: "flex", gap: 24, marginTop: 12, flexWrap: "wrap", fontSize: 13, color: "#555", borderTop: "1px solid #eee", paddingTop: 12 }}>
-              <div>Principal now<br /><b style={{ fontSize: 15, color: "#1a1a1a" }}>{(r.LFF * 100).toFixed(1)}% of a life</b></div>
+            <div style={{ display: "flex", gap: 24, marginTop: 12, flexWrap: "wrap", fontSize: 13, color: T.text2, borderTop: "1px solid " + T.borderFaint, paddingTop: 12 }}>
+              <div>Principal now<br /><b style={{ fontSize: 15, color: T.text }}>{(r.LFF * 100).toFixed(1)}% of a life</b></div>
               <div>Interest over one generation<Info text={TIP.tribute} /><br />
-                <b style={{ fontSize: 15, color: "#b00" }}>{(r.tribLifeShare * 100).toFixed(1)}% of a life</b>
-                <span style={{ color: "#888" }}> ({fmt(r.tribLives)} lives)</span>
+                <b style={{ fontSize: 15, color: T.down }}>{(r.tribLifeShare * 100).toFixed(1)}% of a life</b>
+                <span style={{ color: T.muted }}> ({fmt(r.tribLives)} lives)</span>
               </div>
-              <div>Lifetime tax output<br /><b style={{ fontSize: 15, color: "#1a1a1a" }}>{money(lifetimeTax, currency, sel.pppFactor, btcPrice)}</b></div>
-              <div>Annual interest bill<br /><b style={{ fontSize: 15, color: "#1a1a1a" }}>{money(interestBill, currency, sel.pppFactor, btcPrice)}</b></div>
+              <div>Lifetime tax output<br /><b style={{ fontSize: 15, color: T.text }}>{money(lifetimeTax, currency, sel.pppFactor, btcPrice)}</b></div>
+              <div>Annual interest bill<br /><b style={{ fontSize: 15, color: T.text }}>{money(interestBill, currency, sel.pppFactor, btcPrice)}</b></div>
             </div>
 
             <p style={{ margin: "12px 0 0", fontSize: 13 }}>
               <b>Debt status<Info text={TIP.status} />:</b>{" "}
               {r.snowballing
-                ? <span style={{ color: "#b00", fontWeight: 600 }}>Snowballing</span>
-                : <span style={{ color: "#070", fontWeight: 600 }}>Stabilising</span>}
+                ? <span style={{ color: T.down, fontWeight: 600 }}>Snowballing</span>
+                : <span style={{ color: T.up, fontWeight: 600 }}>Stabilising</span>}
               {" "}— the debt ratio {r.snowballing ? "rises" : "holds or falls"} on its own at current real rates and growth
               {r.borrowingForInterest ? ", and the country is currently borrowing to cover its interest." : "."}
             </p>
 
-            <p style={{ margin: "10px 0 0", fontSize: 13, color: "#555" }}>
+            <p style={{ margin: "10px 0 0", fontSize: 13, color: T.text2 }}>
               <b>Effective interest rate:</b>{" "}
               {sel.rateLive
                 ? <>
                     {(Math.max(0, sel.nomRate - sel.inflation) * 100).toFixed(1)}% real · {(sel.nomRate * 100).toFixed(1)}% nominal{" "}
-                    <span style={{ color: "#888" }}>
+                    <span style={{ color: T.muted }}>
                       — live from IMF (interest ÷ debt)
                       {sel.nomRate - sel.inflation < 0 ? "; inflation outpaces it, so the real rate floors at 0%" : ""}
                     </span>
                   </>
-                : <span style={{ color: "#888" }}>1.0% real assumed — no live interest data for this country</span>}
+                : <span style={{ color: T.muted }}>1.0% real assumed — no live interest data for this country</span>}
             </p>
 
-            <p style={{ fontSize: 12, color: "#888", marginTop: 14, lineHeight: 1.5, fontStyle: "italic" }}>
+            <p style={{ fontSize: 12, color: T.muted, marginTop: 14, lineHeight: 1.5, fontStyle: "italic" }}>
               The debt's size is a fraction of your own generation, but its trajectory reaches down your entire
               bloodline — and the gap between those two facts is political choice, not arithmetic.
             </p>
@@ -468,7 +469,7 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
       {/* ── Table ── */}
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
-          <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd", userSelect: "none" }}>
+          <tr style={{ textAlign: "left", borderBottom: "2px solid " + T.borderStrong, userSelect: "none" }}>
             <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("name")}>Country{arrow("name")}</th>
             <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("position")}>Mortgaged now<Info text={TIP.position} />{arrow("position")}</th>
             {genAdjust && <th style={{ padding: 8, cursor: "pointer" }} onClick={() => toggleSort("nextgen")}>next-gen per head{arrow("nextgen")}</th>}
@@ -485,18 +486,18 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
             return (
               <tr key={c.iso3}
                 onClick={() => setSelected(isSel ? null : c.name)}
-                style={{ borderBottom: "1px solid #eee", cursor: "pointer", background: isSel ? "#eef3ff" : "transparent" }}>
-                <td style={{ padding: 8, fontWeight: 600 }}><span style={{ color: "#bbb", marginRight: 6 }}>{idx + 1}</span>{c.name}</td>
+                style={{ borderBottom: "1px solid " + T.borderFaint, cursor: "pointer", background: isSel ? T.rowSel : "transparent" }}>
+                <td style={{ padding: 8, fontWeight: 600 }}><span style={{ color: T.faint, marginRight: 6 }}>{idx + 1}</span>{c.name}</td>
                 <td style={{ padding: 8 }}>{(r.LFF * 100).toFixed(1)}% &nbsp;({fmt(r.livesOwed)} lives)</td>
                 {genAdjust && (
-                  <td style={{ padding: 8, color: r.nextGenLFF > r.LFF ? "#b00" : "#070" }}>
+                  <td style={{ padding: 8, color: r.nextGenLFF > r.LFF ? T.down : T.up }}>
                     {(r.nextGenLFF * 100).toFixed(1)}% {r.nextGenLFF > r.LFF ? "▲" : "▼"}
                   </td>
                 )}
-                <td style={{ padding: 8, fontWeight: 600, color: freeing ? "#070" : "#b00" }}>{signed(r.livesPerYear)}</td>
+                <td style={{ padding: 8, fontWeight: 600, color: freeing ? T.up : T.down }}>{signed(r.livesPerYear)}</td>
                 <td style={{ padding: 8 }}>{signed(r.livesGovt)}</td>
                 <td style={{ padding: 8 }}>{signed(r.livesInherited)}</td>
-                <td style={{ padding: 8, color: freeing ? "#070" : "#b00" }}>{freeing ? "▲ surfacing" : "▼ sinking"}</td>
+                <td style={{ padding: 8, color: freeing ? T.up : T.down }}>{freeing ? "▲ surfacing" : "▼ sinking"}</td>
               </tr>
             );
           })}
@@ -508,7 +509,7 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
             {showAll ? `Show top 20` : `Show all ${countries.length}`}
           </button>
         )}
-        <span style={{ fontSize: 11, color: "#aaa" }}>
+        <span style={{ fontSize: 11, color: T.muted }}>
           Showing {shown.length} of {countries.length}. Click a column to sort, again to reverse. Click a country for its bloodline reach.
         </span>
       </div>
