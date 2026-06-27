@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import GlobeArcs, { ArcDatum, CountryLight } from "../GlobeArcs";
+import { T } from "../theme";
 
 // ─── Types (shared with the server component in page.tsx) ─────────────────────
 export type Partner = { name: string; valueUSD: number };
@@ -52,11 +53,11 @@ const monthLabel = (m: string) => {
   return (names[parseInt(mo, 10)] || mo) + " " + y;
 };
 
-const card: React.CSSProperties = { border: "1px solid #e3e3e3", borderRadius: 10, padding: 16, background: "#fff" };
+const card: React.CSSProperties = { border: "1px solid " + T.border, borderRadius: 10, padding: 16, background: T.surface };
 const chip = (active: boolean): React.CSSProperties => ({
   padding: "6px 12px", fontSize: 13, cursor: "pointer", borderRadius: 6,
-  border: "1px solid " + (active ? "#222" : "#ccc"),
-  background: active ? "#222" : "#fff", color: active ? "#fff" : "#333",
+  border: "1px solid " + (active ? T.chipActiveBg : T.chipBorder),
+  background: active ? T.chipActiveBg : T.chipBg, color: active ? T.chipActiveText : T.chipText,
 });
 const th: React.CSSProperties = { padding: 8, cursor: "pointer", whiteSpace: "nowrap" };
 const warmCool = (warm: boolean, a: number): [string, string] =>
@@ -196,20 +197,20 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
     else { setSortKey(key); setSortDir(key === "name" ? "asc" : "desc"); }
   };
   const arrow = (k: SortKey) => (
-    <span style={{ color: sortKey === k ? "#222" : "#c5c5c5", fontSize: 11, marginLeft: 3 }}>
+    <span style={{ color: sortKey === k ? T.text : T.faint, fontSize: 11, marginLeft: 3 }}>
       {sortKey === k ? (sortDir === "desc" ? "▼" : "▲") : "⇅"}
     </span>
   );
 
   if (wealth.length === 0) {
     return (
-      <main style={{ maxWidth: 980, margin: "40px auto", padding: 24, fontFamily: "system-ui, sans-serif", color: "#1a1a1a", background: "#fff", borderRadius: 14 }}>
+      <main style={{ maxWidth: 980, margin: "40px auto", padding: 24, fontFamily: "system-ui, sans-serif", color: T.text, background: T.bg, borderRadius: 14 }}>
         <h1 style={{ fontSize: 26, marginBottom: 8 }}>MoneyFlow</h1>
-        <p style={{ color: "#555", fontSize: 14, lineHeight: 1.6 }}>
+        <p style={{ color: T.text2, fontSize: 14, lineHeight: 1.6 }}>
           Live data couldn&apos;t be loaded right now. Rather than show placeholder figures, nothing is displayed. Please refresh in a moment.
         </p>
         {/* Diagnostic line — kept commented for feed-health debugging; uncomment to surface meta.diag:
-        {meta.diag && <p style={{ color: "#aaa", fontSize: 11, fontFamily: "monospace" }}>{meta.diag}</p>}
+        {meta.diag && <p style={{ color: T.muted, fontSize: 11, fontFamily: "monospace" }}>{meta.diag}</p>}
         */}
       </main>
     );
@@ -220,20 +221,20 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
   const netWord = (v: number) => (v > 0 ? "net seller" : v < 0 ? "net buyer" : "balanced");
 
   return (
-    <main style={{ maxWidth: 980, margin: "40px auto", padding: 24, fontFamily: "system-ui, sans-serif", color: "#1a1a1a", background: "#fff", borderRadius: 14 }}>
+    <main style={{ maxWidth: 980, margin: "40px auto", padding: 24, fontFamily: "system-ui, sans-serif", color: T.text, background: T.bg, borderRadius: 14 }}>
       <h1 style={{ fontSize: 26, marginBottom: 4 }}>MoneyFlow</h1>
-      <p style={{ color: "#666", marginBottom: 12, fontSize: 14, lineHeight: 1.5 }}>
+      <p style={{ color: T.text2, marginBottom: 12, fontSize: 14, lineHeight: 1.5 }}>
         Wealth as moving life-force. Countries glow by wealth, edged in gold; each arc is money flowing between them —
-        <b style={{ color: "#b88227" }}> warm</b> = the earning direction, <b style={{ color: "#3f7fc4" }}>cool</b> = the
+        <b style={{ color: T.warm }}> warm</b> = the earning direction, <b style={{ color: T.cool }}>cool</b> = the
         spending side; bigger flows rush faster. Click one country for its profile, a second to see the trade between them.
       </p>
 
-      <div style={{ fontSize: 11, color: "#888", marginBottom: 16, lineHeight: 1.5, borderLeft: "3px solid #ddd", paddingLeft: 10 }}>
+      <div style={{ fontSize: 11, color: T.muted, marginBottom: 16, lineHeight: 1.5, borderLeft: "3px solid " + T.accentRule, paddingLeft: 10 }}>
         <b>Live</b> ({meta.asOf}): {meta.live.length ? meta.live.join(", ") : "—"}.<br />
         Trade is goods only (services excluded) among the largest economies — most of world trade, not all; countries
         outside that web show “—”. Wealth is GDP, the live measure of economic size.
         {/* Diagnostic line — kept commented for feed-health debugging; uncomment to surface meta.diag:
-        {meta.diag && <><br /><span style={{ fontFamily: "monospace", color: "#aaa" }}>{meta.diag}</span></>}
+        {meta.diag && <><br /><span style={{ fontFamily: "monospace", color: T.muted }}>{meta.diag}</span></>}
         */}
       </div>
 
@@ -258,11 +259,11 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
 
       {pulseOn && pulse && curMonth && (
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 10,
-          padding: "10px 14px", borderRadius: 10, background: "#06070d", color: "#f3e2bb" }}>
+          padding: "10px 14px", borderRadius: 10, background: T.inset, color: "#f3e2bb" }}>
           <span style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.5px", fontVariantNumeric: "tabular-nums" }}>
             {typeof pulse.totals[curMonth] === "number" ? money(pulse.totals[curMonth]) : "—"}
           </span>
-          <span style={{ fontSize: 13, color: "#caa45a" }}>in goods crossed borders worldwide · {monthLabel(curMonth)}</span>
+          <span style={{ fontSize: 13, color: T.goldSoft }}>in goods crossed borders worldwide · {monthLabel(curMonth)}</span>
           {curMonth === pulse.months[monthsLen - 1] && (
             <span style={{ fontSize: 11, color: "#8a7a52", fontStyle: "italic" }}>latest month — may be partial as reports arrive</span>
           )}
@@ -271,7 +272,7 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
 
       <GlobeArcs arcs={arcs} countries={countries} highlight={highlight} onSelect={pick} />
       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "0 0 20px" }}>
-        <p style={{ fontSize: 11, color: "#aaa", margin: 0 }}>
+        <p style={{ fontSize: 11, color: T.muted, margin: 0 }}>
           Drag to rotate. Hover an arc for its value; click a country (the arcs pass the click through to the land beneath).
           Click a second country to compare the two.
         </p>
@@ -297,17 +298,17 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
                   <span>{B.name} sells to {A.name}: <b>{money(bSell)}</b></span>
                   <span>Two-way total: <b>{money(total)}</b></span>
                   {total > 0 && (
-                    <span>Balance: <b style={{ color: net >= 0 ? "#1a7a3a" : "#b03030" }}>
+                    <span>Balance: <b style={{ color: net >= 0 ? T.up : T.down }}>
                       {net >= 0 ? A.name : B.name} runs the surplus ({money(Math.abs(net))})</b></span>
                   )}
                 </div>
-                <p style={{ fontSize: 12, color: "#999", margin: 0 }}>
+                <p style={{ fontSize: 12, color: T.muted, margin: 0 }}>
                   Goods totals only — IMF DOTS doesn&apos;t break trade into product categories, so this is who sells how
                   much to whom, not what.
                 </p>
               </>
             ) : (
-              <p style={{ fontSize: 13, color: "#555", margin: "8px 0 0" }}>
+              <p style={{ fontSize: 13, color: T.text2, margin: "8px 0 0" }}>
                 No bilateral goods trade between {A.name} and {B.name} is recorded in the data — one or both may sit
                 outside the major-economy trade web.
               </p>
@@ -326,26 +327,26 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
             {A.expUSD != null && <span>Exports: <b>{money(A.expUSD)}</b></span>}
             {A.impUSD != null && <span>Imports: <b>{money(A.impUSD)}</b></span>}
             {A.netUSD != null && (
-              <span>Net: <b style={{ color: A.netUSD >= 0 ? "#1a7a3a" : "#b03030" }}>
+              <span>Net: <b style={{ color: A.netUSD >= 0 ? T.up : T.down }}>
                 {signedMoney(A.netUSD)} ({netWord(A.netUSD)})</b></span>
             )}
             {A.tradeToGDP != null && <span>Trade / GDP: <b>{pct(A.tradeToGDP)}</b></span>}
           </div>
           {(A.topOut.length > 0 || A.topIn.length > 0) ? (
-            <div style={{ fontSize: 12, color: "#444", lineHeight: 1.6 }}>
+            <div style={{ fontSize: 12, color: T.text2, lineHeight: 1.6 }}>
               {A.topOut.length > 0 && <div>Sells most to: {A.topOut.map((p) => `${p.name} (${money(p.valueUSD)})`).join(", ")}</div>}
               {A.topIn.length > 0 && <div>Buys most from: {A.topIn.map((p) => `${p.name} (${money(p.valueUSD)})`).join(", ")}</div>}
             </div>
           ) : (
-            <p style={{ fontSize: 12, color: "#999", margin: 0 }}>Outside the major-economy trade web — no bilateral flows shown.</p>
+            <p style={{ fontSize: 12, color: T.muted, margin: 0 }}>Outside the major-economy trade web — no bilateral flows shown.</p>
           )}
-          <p style={{ fontSize: 12, color: "#888", margin: "10px 0 0" }}>Click another country to see the trade between them.</p>
+          <p style={{ fontSize: 12, color: T.muted, margin: "10px 0 0" }}>Click another country to see the trade between them.</p>
         </div>
       )}
 
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
-          <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd", userSelect: "none" }}>
+          <tr style={{ textAlign: "left", borderBottom: "2px solid " + T.borderStrong, userSelect: "none" }}>
             <th style={th} onClick={() => toggleSort("name")}>Country{arrow("name")}</th>
             <th style={th} onClick={() => toggleSort("wealth")}>Wealth (GDP){arrow("wealth")}</th>
             <th style={th} onClick={() => toggleSort("net")}>Net seller / buyer{arrow("net")}</th>
@@ -357,15 +358,15 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
             const isSel = selA === w.name || selB === w.name;
             return (
               <tr key={w.iso3} onClick={() => pick(w.name)}
-                style={{ borderBottom: "1px solid #eee", cursor: "pointer", background: isSel ? "#fbf3df" : "transparent" }}>
+                style={{ borderBottom: "1px solid " + T.borderFaint, cursor: "pointer", background: isSel ? T.rowSel : "transparent" }}>
                 <td style={{ padding: 8, fontWeight: 600 }}>
-                  <span style={{ color: "#bbb", marginRight: 6 }}>{idx + 1}</span>{w.name}
+                  <span style={{ color: T.faint, marginRight: 6 }}>{idx + 1}</span>{w.name}
                 </td>
                 <td style={{ padding: 8 }}>{money(w.gdpUSD)}</td>
-                <td style={{ padding: 8, color: w.netUSD == null ? "#bbb" : w.netUSD >= 0 ? "#1a7a3a" : "#b03030" }}>
+                <td style={{ padding: 8, color: w.netUSD == null ? T.faint : w.netUSD >= 0 ? T.up : T.down }}>
                   {w.netUSD == null ? "—" : signedMoney(w.netUSD)}
                 </td>
-                <td style={{ padding: 8, color: w.tradeToGDP == null ? "#bbb" : "#333" }}>
+                <td style={{ padding: 8, color: w.tradeToGDP == null ? T.faint : T.text2 }}>
                   {w.tradeToGDP == null ? "—" : pct(w.tradeToGDP)}
                 </td>
               </tr>
@@ -373,7 +374,7 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
           })}
         </tbody>
       </table>
-      <p style={{ fontSize: 11, color: "#aaa", marginTop: 8 }}>
+      <p style={{ fontSize: 11, color: T.muted, marginTop: 8 }}>
         {wealth.length} countries. Sort by Country, Wealth, Net seller/buyer, or Trade / GDP. Click a country (here or on
         the globe) to select it; click a second to compare; “Clear selection” resets.
       </p>
