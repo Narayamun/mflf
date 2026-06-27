@@ -8,9 +8,9 @@ import Trajectory, { TrajPoint } from "./Trajectory";
 const GG = 28; // generation gap in years (maps years → descendant generations)
 
 function velocityColor(velocity: number) {
-  if (velocity < 0) return "#22c55e";
-  if (velocity < 0.003) return "#f59e0b";
-  return "#dc2626";
+  if (velocity < 0) return "#2ee66a";   // vivid green — surfacing
+  if (velocity < 0.003) return "#ffb020"; // vivid amber — mild
+  return "#ff3838";                       // vivid red — sinking
 }
 
 // ─── Types (shared with the server component in page.tsx) ─────────────────────
