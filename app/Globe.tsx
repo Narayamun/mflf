@@ -1,10 +1,7 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import { Component, ReactNode, useEffect, useMemo, useRef, useState } from "react";
-
-// react-globe.gl touches `window`, so it must load client-only (no SSR).
-const GlobeGl = dynamic(() => import("react-globe.gl"), { ssr: false });
+import { useMemo } from "react";
+import GlobeBase from "./GlobeBase";
 
 export type GlobePoint = {
   name: string;
@@ -18,12 +15,6 @@ export type GlobePoint = {
 
 type Props = { points: GlobePoint[]; onSelect: (name: string) => void };
 
-// Country borders (Natural Earth 110m) — same gold-edged look as the MoneyFlow globe.
-const POLY_URLS = [
-  "https://cdn.jsdelivr.net/gh/vasturiano/globe.gl@master/example/datasets/ne_110m_admin_0_countries.geojson",
-  "https://raw.githubusercontent.com/vasturiano/globe.gl/master/example/datasets/ne_110m_admin_0_countries.geojson",
-];
-
 function hexToRgba(hex: string, a: number): string {
   const h = hex.replace("#", "");
   const r = parseInt(h.slice(0, 2), 16);
@@ -32,72 +23,12 @@ function hexToRgba(hex: string, a: number): string {
   return `rgba(${r},${g},${b},${a.toFixed(3)})`;
 }
 
-class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-  render() {
-    if (this.state.failed) {
-      return (
-        <div style={{ padding: 24, color: "#888", fontSize: 13, textAlign: "center" }}>
-          The 3D globe couldn&apos;t load in this browser. The table below still works.
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
 export default function Globe({ points, onSelect }: Props) {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ width: 700, height: 460 });
-  const [polygons, setPolygons] = useState<object[]>([]);
-
-  // Responsive sizing: follow the container's width (capped) and derive the height
-  // from it, so the globe scales down cleanly on phones and up on wide screens.
-  // ResizeObserver catches container reflow (e.g. the side panel appearing or wrapping),
-  // which a window-resize listener alone would miss.
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
-    const measure = () => {
-      const w = Math.min(el.clientWidth, 900);
-      const h = Math.round(Math.min(Math.max(w * 0.72, 300), 520));
-      setSize((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    window.addEventListener("resize", measure);
-    return () => { ro.disconnect(); window.removeEventListener("resize", measure); };
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      for (const url of POLY_URLS) {
-        try {
-          const res = await fetch(url);
-          if (!res.ok) continue;
-          const gj = await res.json();
-          if (alive && Array.isArray(gj?.features)) { setPolygons(gj.features); return; }
-        } catch { /* try next */ }
-      }
-    })();
-    return () => { alive = false; };
-  }, []);
-
   const byIso = useMemo(() => {
     const m: Record<string, GlobePoint> = {};
     for (const p of points) if (p.iso3) m[p.iso3.toUpperCase()] = p;
     return m;
   }, [points]);
-
-  // Re-key the polygon data when the per-country colours change (lens toggles),
-  // so react-globe.gl re-runs the colour accessors.
-  const colorKey = points.map((p) => p.iso3 + p.color + p.lff.toFixed(2)).join("|");
-  const polyData = useMemo(() => polygons.slice(), [polygons, colorKey]);
 
   const resolve = (feat: object): GlobePoint | null => {
     const p = (feat as { properties?: Record<string, unknown> }).properties || {};
@@ -119,35 +50,26 @@ export default function Globe({ points, onSelect }: Props) {
     const t = Math.max(0, Math.min(1, pt.lff / 1.5));
     return hexToRgba(pt.color, 0.3 + Math.pow(t, 0.85) * 0.6); // 0.30 .. 0.90 — clearly visible
   };
+  const label = (feat: object): string => {
+    const pt = resolve(feat);
+    return pt
+      ? pt.label
+      : `<div style="font:13px system-ui;padding:5px 9px;background:#111;color:#fff;border-radius:5px"><b>${nameOf(feat)}</b><br/><span style="color:#aaa">no score data</span></div>`;
+  };
+
+  // Re-key when the per-country colours change (lens toggles) so the caps re-render.
+  const colorKey = points.map((p) => p.iso3 + p.color + p.lff.toFixed(2)).join("|");
 
   return (
-    <div
-      ref={wrapRef}
-      style={{ background: "#0e1220", borderRadius: 12, overflow: "hidden", marginBottom: 24, height: size.height, minHeight: 300 }}
-    >
-      <Boundary>
-        <GlobeGl
-          width={size.width}
-          height={size.height}
-          backgroundColor="#0e1220"
-          globeImageUrl="//unpkg.com/three-globe/example/img/earth-dark.jpg"
-          atmosphereColor="#caa45a"
-          atmosphereAltitude={0.18}
-          polygonsData={polyData}
-          polygonAltitude={() => 0.01}
-          polygonCapColor={capColor}
-          polygonSideColor={() => "rgba(255,200,72,0.08)"}
-          polygonStrokeColor={() => "rgba(255,200,72,0.8)"}
-          polygonLabel={(feat: object) => {
-            const pt = resolve(feat);
-            return pt
-              ? pt.label
-              : `<div style="font:13px system-ui;padding:5px 9px;background:#111;color:#fff;border-radius:5px"><b>${nameOf(feat)}</b><br/><span style="color:#aaa">no score data</span></div>`;
-          }}
-          onPolygonClick={(feat: object) => { const pt = resolve(feat); if (pt) onSelect(pt.name); }}
-          polygonsTransitionDuration={0}
-        />
-      </Boundary>
-    </div>
+    <GlobeBase
+      backgroundColor="#0e1220"
+      marginBottom={24}
+      fallbackText="The 3D globe couldn't load in this browser. The table below still works."
+      capColor={capColor}
+      label={label}
+      onSelectFeature={(feat) => { const pt = resolve(feat); if (pt) onSelect(pt.name); }}
+      colorKey={colorKey}
+      polygonsTransitionDuration={0}
+    />
   );
 }
