@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import GlobeArcs, { ArcDatum, CountryLight } from "../GlobeArcs";
 import { T } from "../theme";
+import TradeHistory from "../TradeHistory";
 
 // ─── Types (shared with the server component in page.tsx) ─────────────────────
 export type Partner = { name: string; valueUSD: number };
@@ -202,6 +203,44 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
     </span>
   );
 
+  // ── Yearly trade history for the current selection, fetched on demand from the
+  // same-origin /api/dot proxy (keeps thousands of pair series out of the build). ──
+  type Hist =
+    | { kind: "none" }
+    | { kind: "loading" }
+    | { kind: "country"; net: { year: number; value: number }[] }
+    | { kind: "pair"; aToB: { year: number; value: number }[]; bToA: { year: number; value: number }[] }
+    | { kind: "error" };
+  const [hist, setHist] = useState<Hist>({ kind: "none" });
+
+  useEffect(() => {
+    const a = selA ? rowByName[selA] : null;
+    const b = selB ? rowByName[selB] : null;
+    let url: string | null = null;
+    let want: "country" | "pair" | null = null;
+    if (a && !b && a.iso2) { url = `/api/dot?mode=country&c=${encodeURIComponent(a.iso2)}`; want = "country"; }
+    else if (a && b && a.iso2 && b.iso2) { url = `/api/dot?mode=pair&a=${encodeURIComponent(a.iso2)}&b=${encodeURIComponent(b.iso2)}`; want = "pair"; }
+    if (!url || !want) { setHist({ kind: "none" }); return; }
+
+    let ignore = false;
+    setHist({ kind: "loading" });
+    (async () => {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("bad");
+        const j = await res.json();
+        if (ignore) return;
+        if (want === "country" && Array.isArray(j.net)) setHist({ kind: "country", net: j.net });
+        else if (want === "pair") setHist({ kind: "pair", aToB: Array.isArray(j.aToB) ? j.aToB : [], bToA: Array.isArray(j.bToA) ? j.bToA : [] });
+        else setHist({ kind: "error" });
+      } catch {
+        if (!ignore) setHist({ kind: "error" });
+      }
+    })();
+    return () => { ignore = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selA, selB]);
+
   if (wealth.length === 0) {
     return (
       <main style={{ maxWidth: 980, margin: "40px auto", padding: 24, fontFamily: "system-ui, sans-serif", color: T.text, background: T.bg, borderRadius: 14 }}>
@@ -313,6 +352,23 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
                 outside the major-economy trade web.
               </p>
             )}
+            {/* yearly bilateral history — both directions */}
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.text2, marginBottom: 2 }}>
+                Bilateral trade over time <span style={{ fontWeight: 400, color: T.muted }}>· goods exports each way, annual (IMF DOTS)</span>
+              </div>
+              {hist.kind === "loading" && <p style={{ fontSize: 12, color: T.muted, margin: "6px 0" }}>Loading history…</p>}
+              {hist.kind === "error" && <p style={{ fontSize: 12, color: T.muted, margin: "6px 0" }}>Couldn&apos;t load history right now.</p>}
+              {hist.kind === "pair" && (hist.aToB.length > 0 || hist.bToA.length > 0) && (
+                <TradeHistory series={[
+                  { label: A.name + " → " + B.name, color: T.warm, points: hist.aToB },
+                  { label: B.name + " → " + A.name, color: T.cool, points: hist.bToA },
+                ]} />
+              )}
+              {hist.kind === "pair" && hist.aToB.length === 0 && hist.bToA.length === 0 && (
+                <p style={{ fontSize: 12, color: T.muted, margin: "6px 0" }}>No yearly bilateral history recorded for this pair.</p>
+              )}
+            </div>
             <button onClick={clearSel} style={{ ...chip(false), marginTop: 12 }}>Clear selection</button>
           </div>
         );
@@ -340,6 +396,17 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
           ) : (
             <p style={{ fontSize: 12, color: T.muted, margin: 0 }}>Outside the major-economy trade web — no bilateral flows shown.</p>
           )}
+          {/* yearly net-balance history (total goods balance vs the world) */}
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.text2, marginBottom: 2 }}>
+              Trade balance over time <span style={{ fontWeight: 400, color: T.muted }}>· goods vs. the world, annual (IMF DOTS)</span>
+            </div>
+            {hist.kind === "loading" && <p style={{ fontSize: 12, color: T.muted, margin: "6px 0" }}>Loading history…</p>}
+            {hist.kind === "error" && <p style={{ fontSize: 12, color: T.muted, margin: "6px 0" }}>Couldn&apos;t load history right now.</p>}
+            {hist.kind === "country" && (
+              <TradeHistory zeroBands series={[{ label: "Net balance", color: T.text2, points: hist.net }]} />
+            )}
+          </div>
           <p style={{ fontSize: 12, color: T.muted, margin: "10px 0 0" }}>Click another country to see the trade between them.</p>
         </div>
       )}
