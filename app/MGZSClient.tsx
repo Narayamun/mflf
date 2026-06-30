@@ -342,10 +342,16 @@ export default function MGZSClient({ countries, btcPrice, meta }: Props) {
       <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 20 }}>
         <div style={{ flex: "1.6 1 360px", minWidth: 320 }}>
           <Globe points={points} onSelect={(name) => setSelected(name === selected ? null : name)} />
-          <p style={{ fontSize: 11, color: T.muted, margin: 0 }}>
-            Each country glows by its own numbers: colour = direction (green surfacing, amber/red sinking),
-            brightness = how mortgaged now (Position). Drag to rotate; click a country for detail.
+          <p style={{ fontSize: 11, color: T.muted, margin: "0 0 6px", lineHeight: 1.5 }}>
+            Brightness = how mortgaged this generation already is (Position). Colour = the direction of Velocity —
+            whether the years of citizens&apos; future work owed to debt are rising or falling each year:
           </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 11, color: T.muted, lineHeight: 1.5 }}>
+            <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: "50%", background: "#2ee66a", marginRight: 6, verticalAlign: "middle" }} /><b style={{ color: T.text }}>Green</b> — that owed time is shrinking: the country repays faster than it borrows, so each year less of its people&apos;s future work is promised to debt.</span>
+            <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: "50%", background: "#ffb020", marginRight: 6, verticalAlign: "middle" }} /><b style={{ color: T.text }}>Amber</b> — holding roughly steady: the amount owed against future work is barely changing this year.</span>
+            <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: "50%", background: "#ff3838", marginRight: 6, verticalAlign: "middle" }} /><b style={{ color: T.text }}>Red</b> — that owed time is growing: the country adds debt faster than it repays, so each year more of its people&apos;s future work is promised to creditors.</span>
+          </div>
+          <p style={{ fontSize: 11, color: T.muted, margin: "6px 0 0" }}>Drag to rotate; click a country for detail.</p>
         </div>
         <div style={{ flex: "1 1 320px", minWidth: 300 }}>
           {!sel && (
