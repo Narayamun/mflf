@@ -58,6 +58,25 @@ function pointsFromDoc(doc: any): Point[] {
 
 const codeOf = (doc: any): string => (typeof doc?.series_code === "string" ? doc.series_code.toUpperCase() : "");
 
+// IMF IFS gold volume (RAFAGOLDV_OZT) is in MILLIONS of fine troy ounces; convert to
+// metric tonnes (1 tonne = 32,150.7466 fine troy ounces).
+const OZT_PER_TONNE = 32150.7466;
+function tonnesFromDoc(doc: any): Point[] {
+  const periods = doc?.period;
+  const vals = doc?.value;
+  if (!Array.isArray(periods) || !Array.isArray(vals)) return [];
+  const out: Point[] = [];
+  for (let k = 0; k < periods.length; k++) {
+    const year = Number(String(periods[k]).slice(0, 4));
+    const v = vals[k]; // millions of fine troy ounces
+    if (!Number.isNaN(year) && typeof v === "number" && !Number.isNaN(v)) {
+      out.push({ year, value: (v * 1e6) / OZT_PER_TONNE });
+    }
+  }
+  out.sort((a, b) => a.year - b.year);
+  return out;
+}
+
 // World Bank annual indicator for one country -> ascending yearly points (already USD).
 // Response shape is [meta, [ { date, value }, ... ] ].
 async function wbSeries(iso3: string, indicator: string): Promise<Point[]> {
@@ -100,12 +119,14 @@ export async function GET(request: Request): Promise<Response> {
     const cpisDims = encodeURIComponent(JSON.stringify({
       FREQ: ["A"], REF_AREA: [c], INDICATOR: ["I_A_D_T_T_BP6_USD"], REF_SECTOR: ["T"], COUNTERPART_SECTOR: ["T"],
     }));
-    const [tbg, totl, xgld, cpis] = await Promise.all([
+    const [tbg, totl, xgld, cpis, ifsGold] = await Promise.all([
       fetchJSON(`${BASE}/series/IMF/DOT/A.${c}.TBG_USD.W00?observations=1&format=json`),
       c3 ? wbSeries(c3, "FI.RES.TOTL.CD") : Promise.resolve([] as Point[]), // total reserves incl. gold
       c3 ? wbSeries(c3, "FI.RES.XGLD.CD") : Promise.resolve([] as Point[]), // reserves minus gold (FX)
       fetchJSON(`${BASE}/series/IMF/CPIS?observations=1&format=json&limit=600&dimensions=${cpisDims}`),
+      fetchJSON(`${BASE}/series/IMF/IFS/A.${c}.RAFAGOLDV_OZT?observations=1&format=json`), // gold volume (M oz)
     ]);
+    const goldTonnes = tonnesFromDoc(ifsGold?.series?.docs?.[0]);
 
     // Balance: primary is IMF's published goods balance (TBG_USD = exports FOB − imports CIF).
     let net = pointsFromDoc(tbg?.series?.docs?.[0]);
@@ -158,7 +179,7 @@ export async function GET(request: Request): Promise<Response> {
     holdMap.sort((a, b) => b.value - a.value);
     const holdings = holdMap.slice(0, 9);
 
-    return json({ mode, c, net, gold, nonGold, holdings });
+    return json({ mode, c, net, gold, nonGold, goldTonnes, holdings });
   }
 
   // ── Two countries: each direction's goods exports, per year ──
