@@ -58,6 +58,22 @@ function pointsFromDoc(doc: any): Point[] {
 
 const codeOf = (doc: any): string => (typeof doc?.series_code === "string" ? doc.series_code.toUpperCase() : "");
 
+// World Bank annual indicator for one country -> ascending yearly points (already USD).
+// Response shape is [meta, [ { date, value }, ... ] ].
+async function wbSeries(iso3: string, indicator: string): Promise<Point[]> {
+  const data = await fetchJSON(`https://api.worldbank.org/v2/country/${iso3}/indicator/${indicator}?format=json&per_page=20000`);
+  const rows = Array.isArray(data) ? data[1] : null;
+  if (!Array.isArray(rows)) return [];
+  const out: Point[] = [];
+  for (const r of rows) {
+    const year = Number(r?.date);
+    const v = r?.value;
+    if (!Number.isNaN(year) && typeof v === "number" && !Number.isNaN(v)) out.push({ year, value: v });
+  }
+  out.sort((a, b) => a.year - b.year);
+  return out;
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -73,15 +89,26 @@ export async function GET(request: Request): Promise<Response> {
   const { searchParams } = new URL(request.url);
   const mode = searchParams.get("mode");
 
-  // ── Single country: goods trade balance vs the world, per year ──
+  // ── Single country: goods trade balance vs the world + reserves held, per year ──
   if (mode === "country") {
-    const c = clean(searchParams.get("c"));
+    const c = clean(searchParams.get("c"));    // iso2, for IMF DOTS
+    const c3 = clean(searchParams.get("c3"));  // iso3, for World Bank reserves
     if (!c) return json({ error: "bad country code" }, 400);
 
-    // Primary: IMF's published goods trade balance (TBG_USD = exports FOB − imports CIF).
-    const tbg = await fetchJSON(`${BASE}/series/IMF/DOT/A.${c}.TBG_USD.W00?observations=1&format=json`);
-    let net = pointsFromDoc(tbg?.series?.docs?.[0]);
+    // Run the balance (DOTS), the reserve series (World Bank), and the bond-holdings
+    // breakdown (IMF CPIS: this country's debt-securities assets by issuer economy) together.
+    const cpisDims = encodeURIComponent(JSON.stringify({
+      FREQ: ["A"], REF_AREA: [c], INDICATOR: ["I_A_D_T_T_BP6_USD"], REF_SECTOR: ["T"], COUNTERPART_SECTOR: ["T"],
+    }));
+    const [tbg, totl, xgld, cpis] = await Promise.all([
+      fetchJSON(`${BASE}/series/IMF/DOT/A.${c}.TBG_USD.W00?observations=1&format=json`),
+      c3 ? wbSeries(c3, "FI.RES.TOTL.CD") : Promise.resolve([] as Point[]), // total reserves incl. gold
+      c3 ? wbSeries(c3, "FI.RES.XGLD.CD") : Promise.resolve([] as Point[]), // reserves minus gold (FX)
+      fetchJSON(`${BASE}/series/IMF/CPIS?observations=1&format=json&limit=600&dimensions=${cpisDims}`),
+    ]);
 
+    // Balance: primary is IMF's published goods balance (TBG_USD = exports FOB − imports CIF).
+    let net = pointsFromDoc(tbg?.series?.docs?.[0]);
     // Fallback: some reporters lack the balance series — derive it from exports and imports.
     if (net.length === 0) {
       const ids = `IMF/DOT/A.${c}.TXG_FOB_USD.W00,IMF/DOT/A.${c}.TMG_CIF_USD.W00`;
@@ -101,7 +128,37 @@ export async function GET(request: Request): Promise<Response> {
         .map((y) => ({ year: y, value: exp[y] - imp[y] }));
     }
 
-    return json({ mode, c, net });
+    // Reserves: non-gold = reserves minus gold (FX, largely sovereign bonds);
+    //           gold = total minus non-gold (World Bank values gold at year-end prices).
+    const xgldMap: Record<number, number> = {};
+    for (const p of xgld) xgldMap[p.year] = p.value;
+    const nonGold = xgld;
+    const gold = totl
+      .filter((p) => typeof xgldMap[p.year] === "number")
+      .map((p) => ({ year: p.year, value: Math.max(0, p.value - xgldMap[p.year]) }));
+
+    // Bond holdings (CPIS): latest debt-securities assets, by issuer economy. Values are
+    // assumed millions USD (IMF/DBnomics convention); top issuers only.
+    const holdMap: { area: string; value: number }[] = [];
+    const cdocs = Array.isArray(cpis?.series?.docs) ? cpis.series.docs : [];
+    for (const doc of cdocs) {
+      const parts = codeOf(doc).split("."); // FREQ.REF.INDICATOR.REF_SECTOR.CP_SECTOR.CP_AREA
+      const cp = parts[5];
+      if (!cp || !/^[A-Z]{2}$/.test(cp) || cp === c) continue; // ISO2 issuers only, not self/aggregates
+      const vals = doc?.value;
+      let latest: number | null = null;
+      if (Array.isArray(vals)) {
+        for (let k = vals.length - 1; k >= 0; k--) {
+          const v = vals[k];
+          if (typeof v === "number" && !Number.isNaN(v)) { latest = v; break; }
+        }
+      }
+      if (latest != null && latest > 0) holdMap.push({ area: cp, value: latest * MILLION });
+    }
+    holdMap.sort((a, b) => b.value - a.value);
+    const holdings = holdMap.slice(0, 9);
+
+    return json({ mode, c, net, gold, nonGold, holdings });
   }
 
   // ── Two countries: each direction's goods exports, per year ──
