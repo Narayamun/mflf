@@ -91,6 +91,12 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
     return m;
   }, [wealth]);
 
+  const nameByIso2 = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const w of wealth) if (w.iso2) m[w.iso2.toUpperCase()] = w.name;
+    return m;
+  }, [wealth]);
+
   // Click handler: 1st pick = A; 2nd (different) = B; clicking A again clears; a
   // 3rd pick starts over on the new country.
   const pick = (name: string) => {
@@ -208,7 +214,7 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
   type Hist =
     | { kind: "none" }
     | { kind: "loading" }
-    | { kind: "country"; net: { year: number; value: number }[] }
+    | { kind: "country"; net: { year: number; value: number }[]; gold: { year: number; value: number }[]; nonGold: { year: number; value: number }[]; holdings: { area: string; value: number }[] }
     | { kind: "pair"; aToB: { year: number; value: number }[]; bToA: { year: number; value: number }[] }
     | { kind: "error" };
   const [hist, setHist] = useState<Hist>({ kind: "none" });
@@ -218,7 +224,7 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
     const b = selB ? rowByName[selB] : null;
     let url: string | null = null;
     let want: "country" | "pair" | null = null;
-    if (a && !b && a.iso2) { url = `/api/dot?mode=country&c=${encodeURIComponent(a.iso2)}`; want = "country"; }
+    if (a && !b && a.iso2) { url = `/api/dot?mode=country&c=${encodeURIComponent(a.iso2)}&c3=${encodeURIComponent(a.iso3)}`; want = "country"; }
     else if (a && b && a.iso2 && b.iso2) { url = `/api/dot?mode=pair&a=${encodeURIComponent(a.iso2)}&b=${encodeURIComponent(b.iso2)}`; want = "pair"; }
     if (!url || !want) { setHist({ kind: "none" }); return; }
 
@@ -230,7 +236,7 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
         if (!res.ok) throw new Error("bad");
         const j = await res.json();
         if (ignore) return;
-        if (want === "country" && Array.isArray(j.net)) setHist({ kind: "country", net: j.net });
+        if (want === "country" && Array.isArray(j.net)) setHist({ kind: "country", net: j.net, gold: Array.isArray(j.gold) ? j.gold : [], nonGold: Array.isArray(j.nonGold) ? j.nonGold : [], holdings: Array.isArray(j.holdings) ? j.holdings : [] });
         else if (want === "pair") setHist({ kind: "pair", aToB: Array.isArray(j.aToB) ? j.aToB : [], bToA: Array.isArray(j.bToA) ? j.bToA : [] });
         else setHist({ kind: "error" });
       } catch {
@@ -414,6 +420,52 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
               <TradeHistory zeroBands series={[{ label: "Net balance", color: T.text2, points: hist.net }]} />
             )}
           </div>
+          {/* physical (gold) vs paper (FX) reserves, by market value */}
+          {hist.kind === "country" && (hist.gold.length > 0 || hist.nonGold.length > 0) && (() => {
+            const lg = hist.gold[hist.gold.length - 1];
+            const lp = hist.nonGold[hist.nonGold.length - 1];
+            const yr = (lg || lp)?.year;
+            return (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.text2, marginBottom: 2 }}>
+                  Physical vs paper reserves <span style={{ fontWeight: 400, color: T.muted }}>· market value, annual (World Bank)</span>
+                </div>
+                <div style={{ fontSize: 12, color: T.muted, marginBottom: 2 }}>
+                  {lg && <>Physical gold: <b style={{ color: T.gold }}>{money(lg.value)}</b></>}
+                  {lg && lp && " · "}
+                  {lp && <>Paper (FX): <b style={{ color: T.cool }}>{money(lp.value)}</b></>}
+                  {yr != null && <> ({yr})</>}
+                </div>
+                <TradeHistory series={[
+                  { label: "Physical (gold)", color: T.gold, points: hist.gold },
+                  { label: "Paper (FX reserves)", color: T.cool, points: hist.nonGold },
+                ]} />
+                <p style={{ fontSize: 11, color: T.muted, margin: "4px 0 0" }}>
+                  Physical = monetary gold at year-end market prices; paper = foreign-exchange reserves (currencies, deposits and bonds). Shown by value so the two are comparable on one axis.
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* top foreign bond (debt-securities) holdings by issuer country (IMF CPIS) */}
+          {hist.kind === "country" && hist.holdings.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.text2, marginBottom: 4 }}>
+                Foreign bonds held, by issuer <span style={{ fontWeight: 400, color: T.muted }}>· debt securities, latest (IMF CPIS)</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {hist.holdings.map((h) => (
+                  <div key={h.area} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, borderBottom: "1px solid " + T.borderFaint, padding: "2px 0" }}>
+                    <span>{nameByIso2[h.area] || h.area}</span>
+                    <b>{money(h.value)}</b>
+                  </div>
+                ))}
+              </div>
+              <p style={{ fontSize: 11, color: T.muted, margin: "4px 0 0" }}>
+                How much of each issuer&apos;s debt securities {A.name} holds (government and corporate bonds &amp; notes), largest first.
+              </p>
+            </div>
+          )}
           <p style={{ fontSize: 12, color: T.muted, margin: "10px 0 0" }}>Click another country to see the trade between them.</p>
         </div>
       )}
