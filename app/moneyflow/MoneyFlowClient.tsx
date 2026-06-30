@@ -360,10 +360,17 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
               {hist.kind === "loading" && <p style={{ fontSize: 12, color: T.muted, margin: "6px 0" }}>Loading history…</p>}
               {hist.kind === "error" && <p style={{ fontSize: 12, color: T.muted, margin: "6px 0" }}>Couldn&apos;t load history right now.</p>}
               {hist.kind === "pair" && (hist.aToB.length > 0 || hist.bToA.length > 0) && (
-                <TradeHistory series={[
-                  { label: A.name + " → " + B.name, color: T.warm, points: hist.aToB },
-                  { label: B.name + " → " + A.name, color: T.cool, points: hist.bToA },
-                ]} />
+                <>
+                  <TradeHistory series={[
+                    { label: A.name + " → " + B.name, color: T.warm, points: hist.aToB },
+                    { label: B.name + " → " + A.name, color: T.cool, points: hist.bToA },
+                  ]} />
+                  <p style={{ fontSize: 11, color: T.muted, margin: "4px 0 0" }}>
+                    Each line is one direction&apos;s goods exports — <b style={{ color: T.warm }}>warm (amber)</b> = {A.name} selling
+                    to {B.name}, <b style={{ color: T.cool }}>cool (blue)</b> = {B.name} selling to {A.name}. The higher line is the
+                    bigger seller that year; the gap between them is the balance.
+                  </p>
+                </>
               )}
               {hist.kind === "pair" && hist.aToB.length === 0 && hist.bToA.length === 0 && (
                 <p style={{ fontSize: 12, color: T.muted, margin: "6px 0" }}>No yearly bilateral history recorded for this pair.</p>
