@@ -214,7 +214,7 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
   type Hist =
     | { kind: "none" }
     | { kind: "loading" }
-    | { kind: "country"; net: { year: number; value: number }[]; gold: { year: number; value: number }[]; nonGold: { year: number; value: number }[]; holdings: { area: string; value: number }[] }
+    | { kind: "country"; net: { year: number; value: number }[]; gold: { year: number; value: number }[]; nonGold: { year: number; value: number }[]; goldTonnes: { year: number; value: number }[]; holdings: { area: string; value: number }[] }
     | { kind: "pair"; aToB: { year: number; value: number }[]; bToA: { year: number; value: number }[] }
     | { kind: "error" };
   const [hist, setHist] = useState<Hist>({ kind: "none" });
@@ -236,7 +236,7 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
         if (!res.ok) throw new Error("bad");
         const j = await res.json();
         if (ignore) return;
-        if (want === "country" && Array.isArray(j.net)) setHist({ kind: "country", net: j.net, gold: Array.isArray(j.gold) ? j.gold : [], nonGold: Array.isArray(j.nonGold) ? j.nonGold : [], holdings: Array.isArray(j.holdings) ? j.holdings : [] });
+        if (want === "country" && Array.isArray(j.net)) setHist({ kind: "country", net: j.net, gold: Array.isArray(j.gold) ? j.gold : [], nonGold: Array.isArray(j.nonGold) ? j.nonGold : [], goldTonnes: Array.isArray(j.goldTonnes) ? j.goldTonnes : [], holdings: Array.isArray(j.holdings) ? j.holdings : [] });
         else if (want === "pair") setHist({ kind: "pair", aToB: Array.isArray(j.aToB) ? j.aToB : [], bToA: Array.isArray(j.bToA) ? j.bToA : [] });
         else setHist({ kind: "error" });
       } catch {
@@ -425,13 +425,17 @@ export default function MoneyFlowClient({ wealth, flows, pulse, bilateral, meta 
             const lg = hist.gold[hist.gold.length - 1];
             const lp = hist.nonGold[hist.nonGold.length - 1];
             const yr = (lg || lp)?.year;
+            const tByYear: Record<number, number> = {};
+            for (const p of hist.goldTonnes) tByYear[p.year] = p.value;
+            const lastT = hist.goldTonnes[hist.goldTonnes.length - 1];
+            const tonnes = lg ? (tByYear[lg.year] ?? lastT?.value) : lastT?.value;
             return (
               <div style={{ marginTop: 14 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: T.text2, marginBottom: 2 }}>
                   Physical vs paper reserves <span style={{ fontWeight: 400, color: T.muted }}>· market value, annual (World Bank)</span>
                 </div>
                 <div style={{ fontSize: 12, color: T.muted, marginBottom: 2 }}>
-                  {lg && <>Physical gold: <b style={{ color: T.gold }}>{money(lg.value)}</b></>}
+                  {lg && <>Physical gold: <b style={{ color: T.gold }}>{money(lg.value)}</b>{tonnes != null && <> (~{Math.round(tonnes).toLocaleString("en-US")} t)</>}</>}
                   {lg && lp && " · "}
                   {lp && <>Paper (FX): <b style={{ color: T.cool }}>{money(lp.value)}</b></>}
                   {yr != null && <> ({yr})</>}
