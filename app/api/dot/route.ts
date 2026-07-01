@@ -158,8 +158,8 @@ export async function GET(request: Request): Promise<Response> {
       .filter((p) => typeof xgldMap[p.year] === "number")
       .map((p) => ({ year: p.year, value: Math.max(0, p.value - xgldMap[p.year]) }));
 
-    // Bond holdings (CPIS): latest debt-securities assets, by issuer economy. Values are
-    // assumed millions USD (IMF/DBnomics convention); top issuers only.
+    // Bond holdings (CPIS): latest debt-securities assets, by issuer economy. CPIS
+    // values are already in actual USD (unlike DOTS, which is millions), so no scaling.
     const holdMap: { area: string; value: number }[] = [];
     const cdocs = Array.isArray(cpis?.series?.docs) ? cpis.series.docs : [];
     for (const doc of cdocs) {
@@ -174,7 +174,7 @@ export async function GET(request: Request): Promise<Response> {
           if (typeof v === "number" && !Number.isNaN(v)) { latest = v; break; }
         }
       }
-      if (latest != null && latest > 0) holdMap.push({ area: cp, value: latest * MILLION });
+      if (latest != null && latest > 0) holdMap.push({ area: cp, value: latest });
     }
     holdMap.sort((a, b) => b.value - a.value);
     const holdings = holdMap.slice(0, 9);
