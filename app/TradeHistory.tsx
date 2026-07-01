@@ -95,8 +95,18 @@ export default function TradeHistory({
         ))}
 
         {/* sign-coloured dots for the single net series */}
-        {zeroBands && series[0] && series[0].points.map((p) => (
-          <circle key={p.year} cx={x(p.year)} cy={y(p.value)} r={2.4} fill={p.value >= 0 ? T.up : T.down} />
+        {/* data dots + easy-to-hover hit areas showing year and value */}
+        {series.map((s, si) => (
+          <g key={"dots" + si}>
+            {s.points.map((p) => (
+              <g key={p.year}>
+                <circle cx={x(p.year)} cy={y(p.value)} r={2.4} fill={zeroBands ? (p.value >= 0 ? T.up : T.down) : s.color} />
+                <circle cx={x(p.year)} cy={y(p.value)} r={9} fill="transparent" style={{ cursor: "pointer" }}>
+                  <title>{(series.length > 1 ? s.label + " — " : "") + p.year + ": " + money(p.value)}</title>
+                </circle>
+              </g>
+            ))}
+          </g>
         ))}
       </svg>
 
