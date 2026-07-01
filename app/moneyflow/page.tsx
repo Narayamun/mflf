@@ -4,24 +4,17 @@ const TOP_N = 135;
 const MAX_ARCS = 400;
 const PULSE_CORRIDORS = 60;
 
-async function safeJSON(url: string, revalidate: number, attempts = 1): Promise<any> {
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 20000); // don't let a hung request stall the build
-      const res = await fetch(url, {
-        next: { revalidate },
-        signal: ctrl.signal,
-        headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; MGZS-MoneyFlow/1.0)" },
-      } as RequestInit);
-      clearTimeout(timer);
-      if (res.ok) return await res.json();
-    } catch {
-      /* transient failure — fall through and retry if attempts remain */
-    }
-    if (i < attempts - 1) await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+async function safeJSON(url: string, revalidate: number): Promise<any> {
+  try {
+    const res = await fetch(url, {
+      next: { revalidate },
+      headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; MGZS-MoneyFlow/1.0)" },
+    } as RequestInit);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
   }
-  return null;
 }
 
 type Geo = { iso2: string; iso3: string; name: string; lat: number; lng: number };
@@ -83,8 +76,8 @@ const topList = (m: Record<string, Partner[]>, iso3: string, n: number): Partner
 
 export default async function MoneyFlow() {
   const [geoJson, gdpJson] = await Promise.all([
-    safeJSON("https://api.worldbank.org/v2/country?format=json&per_page=400", 86400, 3),
-    safeJSON("https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&mrnev=1&per_page=20000", 86400, 3),
+    safeJSON("https://api.worldbank.org/v2/country?format=json&per_page=400", 86400),
+    safeJSON("https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&mrnev=1&per_page=20000", 86400),
   ]);
 
   const geo = parseGeo(geoJson);
